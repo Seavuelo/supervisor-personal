@@ -1,0 +1,3 @@
+La idea de esta aplicacion de escritorio es una ayuda, una guia sencilla para el dia a dia para no perderse entre la abrumadora cantidad de cosas que uno quiere hacer a lo largo de un dia, por lo menos, para un informatico ansioso apunto de salir de su carrera es asi.
+
+La idea principal es la siguiente, tu le dices una tarea que quieres completar, puede ser para el mismo dia, para otro dia, pero con bajos recursos, debe estar ahi, en tu pantalla, en una secundaria, con unos ticks listos para apretar cuando porfin lo consigas, para calmar esa ansiedad que a veces abruma.
