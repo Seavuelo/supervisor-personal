@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>seeU</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body.orb-mode {
+      padding: 0 !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Superficie Liquid Glass (38% opacidad, 16px blur) */
+    .glass-window {
+      background: rgba(16, 19, 28, 0.38);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      box-shadow: 
+        0 24px 48px -12px rgba(0, 0, 0, 0.7),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.32),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+      transition: opacity 0.2s ease;
+    }
+
+    /* Filas y tarjetas de cristal */
+    .glass-tile {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .glass-tile:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.26);
+      transform: translateY(-1px);
+    }
+
+    .readable-text {
+      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Barra de entrada */
+    .glass-input {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+    }
+
+    .glass-input:focus {
+      background: rgba(0, 0, 0, 0.6);
+      border-color: rgba(255, 255, 255, 0.35);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(255, 255, 255, 0.12);
+    }
+
+    /* Segmented Control estilo Apple */
+    .segmented-control {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 2px;
+      border-radius: 10px;
+      display: inline-flex;
+    }
+
+    .segment-btn {
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 7px;
+      color: rgba(255, 255, 255, 0.6);
+      transition: all 0.18s ease;
+    }
+
+    .segment-btn.active {
+      background: rgba(255, 255, 255, 0.18);
+      color: #ffffff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+
+    .segment-btn:hover:not(.active) {
+      color: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .tick-box {
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .tick-box:hover {
+      border-color: rgba(255, 255, 255, 0.9);
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .completed-task {
+      opacity: 0.45;
+      filter: grayscale(0.5);
+    }
+
+    /* Micro-orbe flotante 32-44px */
+    .seeu-orb {
+      background: rgba(16, 19, 28, 0.55);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      box-shadow: 
+        0 8px 24px rgba(0, 0, 0, 0.65),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.4),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      transition: transform 0.15s ease;
+      width: 34px;
+      height: 34px;
+    }
+
+    .seeu-orb:hover {
+      transform: scale(1.08);
+      border-color: rgba(255, 255, 255, 0.55);
+    }
+
+    .drag-handle {
+      -webkit-app-region: drag;
+      cursor: grab;
+    }
+    .no-drag {
+      -webkit-app-region: no-drag;
+    }
+
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="p-2 box-border text-white">
+
+  <!-- VISTA PRINCIPAL: VENTANA COMPLETA -->
+  <div id="full-window" class="glass-window rounded-3xl p-4 flex flex-col justify-between">
+    
+    <!-- Barra superior / Cabecera (Draggable) -->
+    <div class="drag-handle pb-3 border-b border-white/[0.12]">
+      <div class="flex items-center justify-between">
+        
+        <!-- Controles y Logotipo -->
+        <div class="flex items-center gap-3 no-drag">
+          <div class="flex items-center gap-1.5">
+            <button onclick="closeApp()" title="Cerrar seeU" class="w-3 h-3 rounded-full bg-white/25 hover:bg-red-400/80 transition"></button>
+            <button onclick="minimizeToOrb()" title="Minimizar a micro-orbe" class="w-3 h-3 rounded-full bg-white/25 hover:bg-amber-400/80 transition flex items-center justify-center group">
+              <span class="hidden group-hover:block text-[8px] text-neutral-950 font-bold leading-none mb-0.5">-</span>
+            </button>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 8v5a8 8 0 0 0 16 0V8"></path>
+              <circle cx="12" cy="11.5" r="2.5" fill="currentColor"></circle>
+              <path d="M3 11c3-3.8 6.5-5.5 9-5.5s6 1.7 9 5.5" stroke-width="1.4" opacity="0.45"></path>
+            </svg>
+            <span class="text-xs font-semibold tracking-tight text-white readable-text">seeU</span>
+          </div>
+        </div>
+
+        <!-- Segmented Control de Vistas -->
+        <div class="segmented-control no-drag">
+          <button id="tab-btn-focus" onclick="switchView('focus')" class="segment-btn active">Foco</button>
+          <button id="tab-btn-agenda" onclick="switchView('agenda')" class="segment-btn">Agenda</button>
+          <button id="tab-btn-goals" onclick="switchView('goals')" class="segment-btn">Metas</button>
+        </div>
+
+        <!-- Ajustes y Minimizar -->
+        <div class="flex items-center gap-1 no-drag">
+          <button onclick="toggleSettingsView()" title="Ajustes de Gemini y Posición" class="w-6 h-6 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition flex items-center justify-center">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ENTRADA RÁPIDA / PROMPT DEL AGENTE (Común para Foco, Agenda y Metas) -->
+    <div id="quick-input-bar" class="mt-3 no-drag">
+      <form id="capture-form" class="relative flex items-center">
+        <input 
+          id="task-input" 
+          type="text" 
+          placeholder="Escribe una tarea, cita o meta de estudio..."
+          class="glass-input w-full rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-300 focus:outline-none transition pr-20"
+        />
+        <button 
+          type="submit" 
+          class="absolute right-1.5 px-3 py-1 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 active:scale-95 transition shadow-sm"
+        >
+          Guardar
+        </button>
+      </form>
+    </div>
+
+    <!-- PANEL DEL ASISTENTE AGENTE (Preguntas interactivas y Desglose) -->
+    <div id="ai-assistant-box" class="hidden mt-2.5 p-3 rounded-2xl bg-black/45 border border-white/[0.18] backdrop-blur-md text-xs no-drag">
+      <div id="ai-content"></div>
+    </div>
+
+    <!-- CONTENEDOR DE CONTENIDO (Scrollable) -->
+    <div class="mt-3 flex-1 flex flex-col min-h-0 overflow-hidden no-drag">
+
+      <!-- VISTA 1: FOCO DE HOY -->
+      <div id="view-focus" class="flex-1 flex flex-col min-h-0">
+        <div class="flex items-center justify-between pb-2">
+          <div class="text-[11px] text-neutral-300 readable-text flex items-center gap-1.5">
+            <span id="date-label">Hoy</span>
+            <span class="text-neutral-400">&bull;</span>
+            <span id="focus-counter" class="text-white font-medium">0 pendientes</span>
+          </div>
+          <button onclick="runTriageFocus()" title="Despejar Foco: Calmar sobrecarga mental seleccionando 2 tareas prioritarias" class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition readable-text">
+            Despejar Foco
+          </button>
+        </div>
+
+        <div class="space-y-2 flex-1 overflow-y-auto pr-1" id="focus-list">
+          <!-- Inyección dinámica -->
+        </div>
+      </div>
+
+      <!-- VISTA 2: AGENDA / CALENDARIO -->
+      <div id="view-agenda" class="hidden flex-1 flex flex-col min-h-0">
+        <div class="flex items-center justify-between pb-2">
+          <div class="text-[11px] text-neutral-300 readable-text">
+            <span>Compromisos, citas y entregas programadas</span>
+          </div>
+          <span id="agenda-counter" class="text-[10px] font-mono text-neutral-300">0 citas</span>
+        </div>
+
+        <div class="space-y-2 flex-1 overflow-y-auto pr-1" id="agenda-list">
+          <!-- Inyección dinámica de agenda agrupada -->
+        </div>
+      </div>
+
+      <!-- VISTA 3: METAS Y HÁBITOS -->
+      <div id="view-goals" class="hidden flex-1 flex flex-col min-h-0">
+        <div class="flex items-center justify-between pb-2">
+          <div class="text-[11px] text-neutral-300 readable-text">
+            <span>Proyectos y objetivos con micro-pasos</span>
+          </div>
+          <button onclick="showCreateGoalModal()" class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition readable-text">
+            Nueva Meta
+          </button>
+        </div>
+
+        <!-- Formulario inline para nueva meta (oculto por defecto) -->
+        <div id="new-goal-box" class="hidden mb-2.5 p-3 rounded-2xl bg-black/40 border border-white/[0.16] space-y-2">
+          <input id="goal-title-input" type="text" placeholder="Título de la meta (ej: Estudiar Python para Tesis)..." class="glass-input w-full rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-300 focus:outline-none" />
+          <div class="flex items-center justify-between pt-1">
+            <select id="goal-cat-select" class="glass-input rounded-lg px-2 py-1 text-[11px] text-white">
+              <option value="estudio">Estudio</option>
+              <option value="proyecto">Proyecto</option>
+              <option value="hábito">Hábito</option>
+            </select>
+            <div class="flex items-center gap-1.5">
+              <button onclick="hideCreateGoalModal()" class="px-2 py-1 text-[11px] text-neutral-300 hover:text-white">Cancelar</button>
+              <button onclick="submitNewGoal()" class="px-3 py-1 text-[11px] font-semibold bg-white text-neutral-950 rounded-lg hover:bg-neutral-100 transition shadow">Crear Meta</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-2.5 flex-1 overflow-y-auto pr-1" id="goals-list">
+          <!-- Inyección dinámica de tarjetas de metas -->
+        </div>
+      </div>
+
+      <!-- VISTA 4: AJUSTES Y PREFERENCIAS -->
+      <div id="view-settings" class="hidden flex-1 flex flex-col justify-between pt-1">
+        <div class="space-y-3.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs font-semibold text-white readable-text">Configuración del Agente</div>
+              <div class="text-[11px] text-neutral-300">Ajusta tu clave de Gemini y preferencias</div>
+            </div>
+            <span id="connection-status-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/[0.15] text-neutral-300 font-mono">
+              Comprobando...
+            </span>
+          </div>
+
+          <!-- Clave de Gemini -->
+          <div class="space-y-1.5 p-3 rounded-2xl bg-white/[0.05] border border-white/[0.12]">
+            <label class="text-[11px] font-medium text-neutral-200 block">API Key de Google Gemini</label>
+            <div class="relative flex items-center">
+              <input 
+                id="api-key-input" 
+                type="password" 
+                placeholder="Introduce tu API Key..."
+                class="glass-input w-full rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-400 focus:outline-none transition pr-16"
+              />
+              <button 
+                type="button" 
+                onclick="togglePasswordVisibility()" 
+                class="absolute right-2 text-[10px] text-neutral-300 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.1] transition"
+                id="toggle-vis-btn"
+              >
+                Ver
+              </button>
+            </div>
+            <div class="text-[10px] text-neutral-400 leading-normal mt-1">
+              Gemini 2.5 Flash interpreta intenciones y desglosa tareas complejas. Tu clave se almacena exclusivamente en tu SQLite local.
+            </div>
+            <div class="flex items-center gap-2 pt-1.5">
+              <button 
+                type="button" 
+                onclick="saveApiKey()" 
+                class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition shadow-sm"
+              >
+                Guardar clave
+              </button>
+              <button 
+                type="button" 
+                onclick="testConnection()" 
+                class="px-3 py-1.5 text-xs font-medium rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/[0.12] text-white transition"
+              >
+                Probar conexión
+              </button>
+            </div>
+            <div id="test-result-msg" class="text-[11px] font-medium mt-1"></div>
+          </div>
+
+          <!-- Memoria del orbe -->
+          <div class="p-3 rounded-2xl bg-white/[0.05] border border-white/[0.12] text-[11px] text-neutral-300 space-y-1">
+            <div class="font-medium text-white">Memoria de Posición y Animación</div>
+            <div>El orbe recuerda automáticamente las coordenadas exactas de pantalla donde lo situaste. Al minimizar y restaurar, una transición suave lo lleva a su lugar.</div>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-white/[0.1]">
+          <button 
+            onclick="switchView('focus')" 
+            class="w-full py-2 text-xs font-medium rounded-xl bg-white/[0.1] hover:bg-white/[0.2] border border-white/[0.15] text-white transition"
+          >
+            Volver al Foco
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PIE DE VENTANA -->
+    <div id="footer-bar" class="mt-2.5 pt-2 border-t border-white/[0.1] flex items-center justify-between text-[10px] text-neutral-300 no-drag">
+      <span id="footer-status" class="readable-text font-medium text-neutral-300">seeU activo</span>
+      <span class="font-mono readable-text text-neutral-300">Esc para orbe</span>
+    </div>
+
+  </div>
+
+  <!-- VISTA MICRO-ORBE MINIMIZADO (34px) -->
+  <div 
+    id="minimized-orb" 
+    class="seeu-orb hidden fixed inset-0 m-auto rounded-full cursor-pointer flex flex-col items-center justify-center z-50 group"
+    title="seeU: Clic para abrir, arrastra para mover"
+  >
+    <div class="relative flex items-center justify-center pointer-events-none">
+      <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 8v5a8 8 0 0 0 16 0V8"></path>
+        <circle cx="12" cy="11.5" r="2.5" fill="currentColor"></circle>
+        <path d="M3 11c3-3.8 6.5-5.5 9-5.5s6 1.7 9 5.5" stroke-width="1.4" opacity="0.45"></path>
+      </svg>
+      <span id="orb-count" class="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-white text-neutral-950 text-[8px] font-bold font-mono flex items-center justify-center shadow">
+        0
+      </span>
+    </div>
+  </div>
+
+  <script>
+    let currentView = 'focus';
+    let allTasks = [];
+    let allGoals = [];
+
+    // Fecha en español
+    const now = new Date();
+    const options = { weekday: 'long', day: 'numeric', month: 'short' };
+    const dateStr = now.toLocaleDateString('es-ES', options);
+    document.getElementById('date-label').textContent = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+
+    // Conmutador de vistas
+    function switchView(viewName) {
+      currentView = viewName;
+
+      ['focus', 'agenda', 'goals', 'settings'].forEach(v => {
+        const el = document.getElementById(`view-${v}`);
+        if (el) el.classList.add('hidden');
+      });
+
+      ['focus', 'agenda', 'goals'].forEach(v => {
+        const btn = document.getElementById(`tab-btn-${v}`);
+        if (btn) btn.classList.remove('active');
+      });
+
+      const target = document.getElementById(`view-${viewName}`);
+      if (target) target.classList.remove('hidden');
+
+      const targetBtn = document.getElementById(`tab-btn-${viewName}`);
+      if (targetBtn) targetBtn.classList.add('active');
+
+      const inputBar = document.getElementById('quick-input-bar');
+      const footerBar = document.getElementById('footer-bar');
+      if (viewName === 'settings') {
+        inputBar.classList.add('hidden');
+        footerBar.classList.add('hidden');
+        if (window.pywebview && window.pywebview.api) {
+          window.pywebview.api.get_api_key_masked().then(k => {
+            if (k) document.getElementById('api-key-input').placeholder = k;
+          });
+          checkConnectionStatus();
+        }
+      } else {
+        inputBar.classList.remove('hidden');
+        footerBar.classList.remove('hidden');
+      }
+
+      renderCurrentView();
+    }
+
+    function toggleSettingsView() {
+      if (currentView === 'settings') {
+        switchView('focus');
+      } else {
+        switchView('settings');
+      }
+    }
+
+    function renderCurrentView() {
+      updateCounters();
+      if (currentView === 'focus') {
+        renderFocusTasks();
+      } else if (currentView === 'agenda') {
+        renderAgendaTasks();
+      } else if (currentView === 'goals') {
+        renderGoals();
+      }
+    }
+
+    function updateCounters() {
+      const pendingFocus = allTasks.filter(t => t.status === 'pendiente' && !t.goal_id).length;
+      document.getElementById('focus-counter').textContent = `${pendingFocus} pendiente${pendingFocus === 1 ? '' : 's'}`;
+      document.getElementById('orb-count').textContent = pendingFocus;
+
+      const agendaTasks = allTasks.filter(t => t.scheduled_time || t.scheduled_date || t.task_type === 'appointment');
+      document.getElementById('agenda-counter').textContent = `${agendaTasks.length} cita${agendaTasks.length === 1 ? '' : 's'}`;
+    }
+
+    // Renderizado: Foco de Hoy
+    function renderFocusTasks() {
+      const container = document.getElementById('focus-list');
+      container.innerHTML = '';
+
+      // Tareas que no son de agenda lejana ni pasos de metas anidadas
+      const focusTasks = allTasks.filter(t => !t.goal_id);
+
+      if (focusTasks.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
+            Sin tareas en foco.<br/><span class="text-[11px] text-neutral-400">Escribe algo arriba para registrar.</span>
+          </div>
+        `;
+        return;
+      }
+
+      focusTasks.forEach(task => {
+        const isCompleted = task.status === 'completada';
+        const div = document.createElement('div');
+        div.className = `glass-tile group flex items-start gap-3 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
+        div.innerHTML = `
+          <button onclick="toggleTaskStatus(${task.id})" class="tick-box mt-0.5 w-4 h-4 rounded-md border ${isCompleted ? 'bg-white border-white' : 'border-neutral-300'} flex items-center justify-center">
+            <svg class="w-3 h-3 text-neutral-950 ${isCompleted ? '' : 'hidden'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${task.title}</div>
+            ${task.description ? `<div class="text-[10px] text-neutral-200 mt-0.5 readable-text">${task.description}</div>` : ''}
+          </div>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${task.tag || 'Hoy'}</span>
+          <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Renderizado: Agenda / Calendario
+    function renderAgendaTasks() {
+      const container = document.getElementById('agenda-list');
+      container.innerHTML = '';
+
+      const agendaTasks = allTasks.filter(t => t.scheduled_time || t.scheduled_date || t.task_type === 'appointment');
+
+      if (agendaTasks.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
+            No hay compromisos agendados.<br/><span class="text-[11px] text-neutral-400">Escribe algo como "médico el martes a las 12" para agendar.</span>
+          </div>
+        `;
+        return;
+      }
+
+      agendaTasks.forEach(task => {
+        const isCompleted = task.status === 'completada';
+        const div = document.createElement('div');
+        div.className = `glass-tile group flex items-start gap-3 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
+        div.innerHTML = `
+          <button onclick="toggleTaskStatus(${task.id})" class="tick-box mt-0.5 w-4 h-4 rounded-md border ${isCompleted ? 'bg-white border-white' : 'border-neutral-300'} flex items-center justify-center">
+            <svg class="w-3 h-3 text-neutral-950 ${isCompleted ? '' : 'hidden'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${task.title}</div>
+            <div class="text-[10px] text-neutral-300 mt-0.5 readable-text flex items-center gap-2">
+              ${task.scheduled_date ? `<span>${task.scheduled_date}</span>` : ''}
+              ${task.scheduled_time ? `<span class="font-mono bg-white/[0.1] px-1.5 py-0.2 rounded">${task.scheduled_time}</span>` : ''}
+            </div>
+          </div>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${task.tag || 'Cita'}</span>
+          <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Renderizado: Metas y Hábitos
+    function renderGoals() {
+      const container = document.getElementById('goals-list');
+      container.innerHTML = '';
+
+      if (allGoals.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
+            No tienes metas creadas.<br/><span class="text-[11px] text-neutral-400">Pulsa 'Nueva Meta' o escribe 'estudiar python' para desglosar pasos.</span>
+          </div>
+        `;
+        return;
+      }
+
+      allGoals.forEach(goal => {
+        const div = document.createElement('div');
+        div.className = 'glass-tile p-3.5 rounded-2xl space-y-2.5';
+        
+        let stepsHtml = '';
+        if (goal.steps && goal.steps.length > 0) {
+          goal.steps.forEach(step => {
+            const isStepCompleted = step.status === 'completada';
+            stepsHtml += `
+              <div class="flex items-center justify-between text-[11px] py-1 border-b border-white/[0.06] last:border-0">
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                  <button onclick="toggleTaskStatus(${step.id})" class="tick-box w-3.5 h-3.5 rounded border ${isStepCompleted ? 'bg-white border-white' : 'border-neutral-400'} flex items-center justify-center">
+                    <svg class="w-2.5 h-2.5 text-neutral-950 ${isStepCompleted ? '' : 'hidden'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <span class="readable-text ${isStepCompleted ? 'line-through text-neutral-400' : 'text-neutral-100'} truncate">${step.title}</span>
+                </div>
+                <span class="text-[9px] font-mono text-neutral-300 ml-2 bg-white/[0.08] px-1.5 py-0.5 rounded">${step.tag || 'Paso'}</span>
+              </div>
+            `;
+          });
+        } else {
+          stepsHtml = `<div class="text-[10px] text-neutral-400 italic">Sin micro-pasos definidos aún.</div>`;
+        }
+
+        div.innerHTML = `
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-xs font-semibold text-white readable-text">${goal.title}</div>
+              <div class="text-[10px] text-neutral-300 capitalize">${goal.category}</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-mono text-white readable-text">${goal.progress_percentage}%</span>
+              <button onclick="deleteGoal(${goal.id})" class="text-neutral-400 hover:text-red-400 text-xs px-1" title="Eliminar Meta">&times;</button>
+            </div>
+          </div>
+
+          <!-- Barra de Progreso -->
+          <div class="w-full h-1.5 rounded-full bg-white/[0.1] overflow-hidden">
+            <div class="h-full bg-white transition-all duration-300" style="width: ${goal.progress_percentage}%"></div>
+          </div>
+
+          <!-- Micro-pasos -->
+          <div class="space-y-1 pt-1">
+            ${stepsHtml}
+          </div>
+
+          <!-- Agregar micro-paso -->
+          <div class="pt-1 flex items-center gap-1.5">
+            <input id="new-step-input-${goal.id}" type="text" placeholder="Nuevo micro-paso (20 min)..." class="glass-input flex-1 rounded-lg px-2.5 py-1 text-[11px] text-white placeholder-neutral-400 focus:outline-none" />
+            <button onclick="addStepToGoal(${goal.id})" class="px-2.5 py-1 text-[10px] font-semibold bg-white/[0.15] hover:bg-white/[0.25] text-white rounded-lg transition">Añadir</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function showCreateGoalModal() {
+      document.getElementById('new-goal-box').classList.remove('hidden');
+      document.getElementById('goal-title-input').focus();
+    }
+
+    function hideCreateGoalModal() {
+      document.getElementById('new-goal-box').classList.add('hidden');
+      document.getElementById('goal-title-input').value = '';
+    }
+
+    function submitNewGoal() {
+      const title = document.getElementById('goal-title-input').value.trim();
+      const cat = document.getElementById('goal-cat-select').value;
+      if (!title) return;
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.create_goal(title, '', cat).then(newG => {
+          allGoals.unshift(newG);
+          hideCreateGoalModal();
+          renderGoals();
+        });
+      }
+    }
+
+    function addStepToGoal(goalId) {
+      const input = document.getElementById(`new-step-input-${goalId}`);
+      const val = input.value.trim();
+      if (!val) return;
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.add_step_to_goal(goalId, val, '25 min').then(() => {
+          fetchData();
+        });
+      }
+    }
+
+    function deleteGoal(goalId) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.delete_goal(goalId).then(() => {
+          allGoals = allGoals.filter(g => g.id !== goalId);
+          renderGoals();
+        });
+      }
+    }
+
+    // Datos y Estado
+    function fetchData() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_tasks().then(tasks => {
+          allTasks = tasks;
+          renderCurrentView();
+        });
+        window.pywebview.api.get_goals().then(goals => {
+          allGoals = goals;
+          if (currentView === 'goals') renderGoals();
+        });
+        checkConnectionStatus();
+      }
+    }
+
+    window.addEventListener('pywebviewready', () => {
+      fetchData();
+    });
+
+    // Envío desde la entrada de texto rápida
+    document.getElementById('capture-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const input = document.getElementById('task-input');
+      const val = input.value.trim();
+      if (!val) return;
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.process_ai(val).then(result => {
+          handleAIResult(val, result);
+        });
+      }
+    });
+
+    function handleAIResult(originalText, result) {
+      const aiBox = document.getElementById('ai-assistant-box');
+      const aiContent = document.getElementById('ai-content');
+
+      if (result.action === 'question') {
+        aiBox.classList.remove('hidden');
+        let buttonsHtml = '';
+        (result.options || ['10:00', '12:00', '16:30', 'Sin hora fija']).forEach(opt => {
+          buttonsHtml += `<button onclick="confirmScheduledTask('${originalText}', '${opt}', '${result.scheduled_date || ''}')" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${opt}</button>`;
+        });
+        aiContent.innerHTML = `
+          <div class="text-white font-semibold readable-text">seeU &bull; Aclaración de Agenda:</div>
+          <div class="text-neutral-200 mt-1 readable-text">${result.question || '¿A qué hora o fecha la agendamos?'}</div>
+          <div class="flex flex-wrap gap-1.5 mt-2.5">${buttonsHtml}</div>
+        `;
+      } else if (result.action === 'micro_steps') {
+        aiBox.classList.remove('hidden');
+        let stepsHtml = '';
+        (result.tasks || []).forEach(step => {
+          stepsHtml += `
+            <div class="flex items-center gap-2 text-neutral-100 readable-text">
+              <span class="w-1.5 h-1.5 rounded-full bg-white/70"></span>
+              <span>${step.title}</span>
+            </div>
+          `;
+        });
+        window._pendingGoalData = {
+          title: result.goal_title || originalText,
+          tasks: result.tasks
+        };
+        aiContent.innerHTML = `
+          <div class="text-white font-semibold readable-text">Desglose propuesto para reducir sobrecarga:</div>
+          <div class="space-y-1.5 my-2.5 text-neutral-100 text-[11px]">${stepsHtml}</div>
+          <div class="flex items-center gap-2">
+            <button onclick="confirmMicroStepsAsGoal()" class="flex-1 px-3 py-1.5 bg-white text-neutral-950 font-semibold rounded-xl hover:bg-neutral-100 text-[11px] transition shadow-sm">
+              Crear Meta con estos pasos
+            </button>
+            <button onclick="confirmMicroStepsToFocus()" class="px-3 py-1.5 bg-white/[0.15] hover:bg-white/[0.25] text-white font-medium rounded-xl text-[11px] transition">
+              Solo al Foco
+            </button>
+          </div>
+        `;
+      } else if (result.action === 'scheduled_task') {
+        const t = (result.tasks && result.tasks[0]) || { title: originalText, tag: 'Agenda' };
+        createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, 'appointment');
+        document.getElementById('task-input').value = '';
+        aiBox.classList.add('hidden');
+        switchView('agenda');
+      } else {
+        const t = (result.tasks && result.tasks[0]) || { title: originalText, tag: 'Hoy' };
+        createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, t.task_type || 'quick');
+        document.getElementById('task-input').value = '';
+        aiBox.classList.add('hidden');
+        if (currentView !== 'focus') switchView('focus');
+      }
+    }
+
+    function confirmScheduledTask(title, timeOrDate, scheduledDate) {
+      createTaskInDB(title, timeOrDate, timeOrDate, scheduledDate || null, 'appointment');
+      document.getElementById('ai-assistant-box').classList.add('hidden');
+      document.getElementById('task-input').value = '';
+      switchView('agenda');
+    }
+
+    function confirmMicroStepsAsGoal() {
+      if (window._pendingGoalData && window.pywebview && window.pywebview.api) {
+        window.pywebview.api.create_goal(window._pendingGoalData.title, '', 'estudio').then(newG => {
+          const promises = window._pendingGoalData.tasks.map(st => {
+            return window.pywebview.api.add_step_to_goal(newG.id, st.title, st.tag || '20 min');
+          });
+          Promise.all(promises).then(() => {
+            document.getElementById('ai-assistant-box').classList.add('hidden');
+            document.getElementById('task-input').value = '';
+            fetchData();
+            switchView('goals');
+          });
+        });
+      }
+    }
+
+    function confirmMicroStepsToFocus() {
+      if (window._pendingGoalData && window._pendingGoalData.tasks) {
+        window._pendingGoalData.tasks.forEach(st => {
+          createTaskInDB(st.title, st.tag || 'Paso', null, null, 'micro_step');
+        });
+      }
+      document.getElementById('ai-assistant-box').classList.add('hidden');
+      document.getElementById('task-input').value = '';
+      switchView('focus');
+    }
+
+    // Función Anti-ansiedad: Despejar foco
+    function runTriageFocus() {
+      if (!window.pywebview || !window.pywebview.api) return;
+
+      const aiBox = document.getElementById('ai-assistant-box');
+      const aiContent = document.getElementById('ai-content');
+      aiBox.classList.remove('hidden');
+
+      aiContent.innerHTML = `
+        <div class="text-white font-semibold readable-text">Analizando tu carga mental...</div>
+        <div class="text-neutral-300 mt-1 readable-text">El agente está seleccionando solo 2 tareas esenciales para hoy para calmar la ansiedad.</div>
+      `;
+
+      window.pywebview.api.triage_focus().then(res => {
+        aiContent.innerHTML = `
+          <div class="text-white font-semibold readable-text">Despejar Foco:</div>
+          <div class="text-neutral-200 mt-1 readable-text leading-relaxed">${res.message}</div>
+          <div class="mt-2.5 flex justify-end">
+            <button onclick="document.getElementById('ai-assistant-box').classList.add('hidden')" class="px-3 py-1 bg-white text-neutral-950 rounded-lg text-xs font-semibold hover:bg-neutral-100 transition shadow">
+              Comenzar con calma
+            </button>
+          </div>
+        `;
+      });
+    }
+
+    function createTaskInDB(title, tag, scheduled_time, scheduled_date, task_type, goal_id) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.create_task(title, tag, scheduled_time, scheduled_date, task_type, goal_id).then(newTask => {
+          allTasks.unshift(newTask);
+          renderCurrentView();
+        });
+      }
+    }
+
+    function toggleTaskStatus(taskId) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.toggle_task(taskId).then(newStatus => {
+          const t = allTasks.find(item => item.id === taskId);
+          if (t) {
+            t.status = newStatus;
+          }
+          fetchData();
+        });
+      }
+    }
+
+    function deleteTask(taskId) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.delete_task(taskId).then(() => {
+          allTasks = allTasks.filter(t => t.id !== taskId);
+          renderCurrentView();
+        });
+      }
+    }
+
+    // Configuración y API Key
+    function togglePasswordVisibility() {
+      const input = document.getElementById('api-key-input');
+      const btn = document.getElementById('toggle-vis-btn');
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = 'Ocultar';
+      } else {
+        input.type = 'password';
+        btn.textContent = 'Ver';
+      }
+    }
+
+    function saveApiKey() {
+      const input = document.getElementById('api-key-input');
+      const val = input.value.trim();
+      const msg = document.getElementById('test-result-msg');
+      if (!val) {
+        msg.textContent = 'Escribe una clave antes de guardar.';
+        msg.className = 'text-[11px] font-medium mt-1 text-amber-300';
+        return;
+      }
+
+      msg.textContent = 'Guardando y verificando...';
+      msg.className = 'text-[11px] font-medium mt-1 text-neutral-300';
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.save_api_key(val).then(res => {
+          if (res.status === 'ok') {
+            msg.textContent = 'Clave guardada y conectada con éxito.';
+            msg.className = 'text-[11px] font-medium mt-1 text-emerald-400';
+            input.value = '';
+            input.placeholder = '••••••••';
+          } else {
+            msg.textContent = res.message;
+            msg.className = 'text-[11px] font-medium mt-1 text-red-400';
+          }
+          checkConnectionStatus();
+        });
+      }
+    }
+
+    function testConnection() {
+      const msg = document.getElementById('test-result-msg');
+      msg.textContent = 'Comprobando conexión con Gemini...';
+      msg.className = 'text-[11px] font-medium mt-1 text-neutral-300';
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.test_connection().then(res => {
+          if (res.status === 'ok') {
+            msg.textContent = res.message;
+            msg.className = 'text-[11px] font-medium mt-1 text-emerald-400';
+          } else {
+            msg.textContent = res.message;
+            msg.className = 'text-[11px] font-medium mt-1 text-amber-300';
+          }
+          checkConnectionStatus();
+        });
+      }
+    }
+
+    function checkConnectionStatus() {
+      const badge = document.getElementById('connection-status-badge');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.test_connection().then(res => {
+          if (res.status === 'ok') {
+            badge.textContent = 'Gemini 2.5 Activo';
+            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono';
+          } else {
+            badge.textContent = 'Motor Local Autónomo';
+            badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/[0.15] text-neutral-300 font-mono';
+          }
+        });
+      }
+    }
+
+    // Control de Micro-Orbe y Animación
+    function minimizeToOrb() {
+      document.body.classList.add('orb-mode');
+      document.getElementById('full-window').classList.add('hidden');
+      document.getElementById('minimized-orb').classList.remove('hidden');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.minimize_to_orb();
+      }
+    }
+
+    function restoreFromOrb() {
+      document.body.classList.remove('orb-mode');
+      document.getElementById('minimized-orb').classList.add('hidden');
+      document.getElementById('full-window').classList.remove('hidden');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.restore_window();
+      }
+    }
+
+    // Umbral de Arrastre vs Clic del Orbe
+    let orbMouseDownTime = 0;
+    let orbStartX = 0;
+    let orbStartY = 0;
+    let orbDidDrag = false;
+
+    const orbEl = document.getElementById('minimized-orb');
+
+    orbEl.addEventListener('mousedown', (e) => {
+      orbMouseDownTime = Date.now();
+      orbStartX = e.screenX;
+      orbStartY = e.screenY;
+      orbDidDrag = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (orbMouseDownTime > 0) {
+        const dist = Math.hypot(e.screenX - orbStartX, e.screenY - orbStartY);
+        if (dist > 5) {
+          orbDidDrag = true;
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      setTimeout(() => {
+        orbMouseDownTime = 0;
+      }, 50);
+    });
+
+    orbEl.addEventListener('click', (e) => {
+      const duration = Date.now() - orbMouseDownTime;
+      // Si se movió o se mantuvo presionado como arrastre, suprimir apertura
+      if (orbDidDrag || duration > 260) {
+        e.stopPropagation();
+        e.preventDefault();
+        orbDidDrag = false;
+        return;
+      }
+      restoreFromOrb();
+    });
+
+    function closeApp() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.close_app();
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!document.getElementById('full-window').classList.contains('hidden')) {
+          minimizeToOrb();
+        } else {
+          restoreFromOrb();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
