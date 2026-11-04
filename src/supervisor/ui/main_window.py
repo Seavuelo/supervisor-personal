@@ -250,8 +250,62 @@ _qt_invoker = _QtInvoker()
 def _run_in_gui(fn):
     QtCore.QCoreApplication.postEvent(_qt_invoker, _QtFnEvent(fn))
 
+def _apply_windows_acrylic_and_blur(hwnd):
+    """Aplica el efecto de desenfoque de cristal real (Acrylic Blur / DWM) en Windows 10 y 11."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import Structure, c_int, c_void_p, sizeof, byref
+
+        user32 = ctypes.windll.user32
+        dwmapi = ctypes.windll.dwmapi
+
+        # 1. Windows 11: DWMWA_USE_IMMERSIVE_DARK_MODE (20) y DWMWA_SYSTEMBACKDROP_TYPE (38)
+        try:
+            dark_mode = c_int(1)
+            dwmapi.DwmSetWindowAttribute(c_void_p(hwnd), c_int(20), byref(dark_mode), sizeof(dark_mode))
+
+            backdrop = c_int(4) # 4 = DWMSBT_TRANSIENTWINDOW (Acrylic Blur)
+            dwmapi.DwmSetWindowAttribute(c_void_p(hwnd), c_int(38), byref(backdrop), sizeof(backdrop))
+        except Exception:
+            pass
+
+        # 2. Windows 10 & Fallback Universal: SetWindowCompositionAttribute con AccentPolicy
+        class ACCENT_POLICY(Structure):
+            _fields_ = [
+                ("AccentState", c_int),
+                ("AccentFlags", c_int),
+                ("GradientColor", c_int),
+                ("AnimationId", c_int)
+            ]
+
+        class WINDOWCOMPOSITIONATTRIBDATA(Structure):
+            _fields_ = [
+                ("Attribute", c_int),
+                ("Data", c_void_p),
+                ("SizeOfData", c_int)
+            ]
+
+        accent = ACCENT_POLICY()
+        accent.AccentState = 4 # ACCENT_ENABLE_ACRYLICBLURBEHIND
+        accent.AccentFlags = 2
+        accent.GradientColor = 0xCC10121A # Tinte oscuro profundo
+        accent.AnimationId = 0
+
+        data = WINDOWCOMPOSITIONATTRIBDATA()
+        data.Attribute = 19 # WCA_ACCENT_POLICY
+        data.Data = ctypes.cast(ctypes.pointer(accent), c_void_p)
+        data.SizeOfData = sizeof(accent)
+
+        set_window_comp = getattr(user32, "SetWindowCompositionAttribute", None)
+        if set_window_comp:
+            set_window_comp(c_void_p(hwnd), byref(data))
+    except Exception as e:
+        print(f"[seeU] Blur DWM Windows: {e}")
+
 def _setup_system_tray_and_tool_window(window, api):
-    """Configura el icono en la bandeja del sistema y remueve la app de la barra de tareas tradicional."""
+    """Configura el icono en la bandeja del sistema, desenfoque en Windows y remueve la app de la barra de tareas."""
     def _apply_in_gui():
         try:
             from PyQt6 import QtCore
@@ -262,25 +316,47 @@ def _setup_system_tray_and_tool_window(window, api):
             q_win = BrowserView.instances.get(window.uid)
             q_app = QApplication.instance()
 
+            icon_file = Path(__file__).resolve().parent / "assets" / "icon.png"
+
             if q_win:
                 # Ocultar de la barra de tareas principal (tint2 / taskbar tradicional)
                 q_win.setWindowFlag(QtCore.Qt.WindowType.Tool, True)
+
+                # Icono de la ventana
+                if icon_file.exists():
+                    app_icon = QIcon(str(icon_file))
+                    q_win.setWindowIcon(app_icon)
+                    if q_app:
+                        q_app.setWindowIcon(app_icon)
+
+                # Desenfoque real de cristal en Windows
+                if sys.platform == "win32":
+                    try:
+                        hwnd = int(q_win.winId())
+                        _apply_windows_acrylic_and_blur(hwnd)
+                    except Exception as err:
+                        print(f"[seeU] Error aplicando blur Windows: {err}")
+
                 q_win.show()
 
             if q_app and QSystemTrayIcon.isSystemTrayAvailable():
-                # Crear icono vectorizado de seeU para la bandeja
-                pix = QPixmap(24, 24)
-                pix.fill(QtCore.Qt.GlobalColor.transparent)
-                painter = QPainter(pix)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setBrush(QColor(16, 19, 28))
-                painter.setPen(QPen(QColor(255, 255, 255, 200), 1.5))
-                painter.drawEllipse(2, 2, 20, 20)
-                painter.setBrush(QColor(255, 255, 255))
-                painter.drawEllipse(9, 9, 6, 6)
-                painter.end()
+                # Crear icono para la bandeja
+                if icon_file.exists():
+                    tray_pix = QPixmap(str(icon_file)).scaled(24, 24, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
+                    tray_icon = QSystemTrayIcon(QIcon(tray_pix), q_app)
+                else:
+                    pix = QPixmap(24, 24)
+                    pix.fill(QtCore.Qt.GlobalColor.transparent)
+                    painter = QPainter(pix)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                    painter.setBrush(QColor(16, 19, 28))
+                    painter.setPen(QPen(QColor(255, 255, 255, 200), 1.5))
+                    painter.drawEllipse(2, 2, 20, 20)
+                    painter.setBrush(QColor(255, 255, 255))
+                    painter.drawEllipse(9, 9, 6, 6)
+                    painter.end()
+                    tray_icon = QSystemTrayIcon(QIcon(pix), q_app)
 
-                tray_icon = QSystemTrayIcon(QIcon(pix), q_app)
                 tray_icon.setToolTip("seeU • Supervisor Personal")
 
                 # Menú contextual
@@ -328,7 +404,7 @@ def start_ui():
         easy_drag=True,
         transparent=True,
         on_top=True,
-        background_color="#12141c"
+        background_color=None
     )
 
     api.set_window(window)

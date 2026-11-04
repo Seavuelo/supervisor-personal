@@ -7,6 +7,7 @@ project_root = Path.cwd()
 
 added_files = [
     (str(project_root / 'src' / 'supervisor' / 'ui' / 'index.html'), 'supervisor/ui'),
+    (str(project_root / 'src' / 'supervisor' / 'ui' / 'assets'), 'supervisor/ui/assets'),
 ]
 
 a = Analysis(
@@ -49,6 +50,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(project_root / 'assets' / 'icon.ico'),
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

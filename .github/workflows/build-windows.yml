@@ -1,4 +1,4 @@
-name: Compilar seeU para Windows
+name: Compilar seeU y Crear Instalador para Windows
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-windows:
-    name: Compilar Ejecutable Windows (.exe)
+    name: Compilar seeU.exe e Instalador Setup
     runs-on: windows-latest
 
     steps:
@@ -22,24 +22,31 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Instalar dependencias
+      - name: Instalar Inno Setup (Compilador de instaladores Windows)
+        run: |
+          choco install innosetup -y
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+
+      - name: Instalar dependencias de Python
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Compilar seeU con PyInstaller
+      - name: Compilar seeU.exe y generar instalador seeU-Setup-x64.exe
         run: |
           python build_windows_exe.py
 
-      - name: Empaquetar ejecutable y recursos
+      - name: Empaquetar version portable en ZIP
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\seeU\* -DestinationPath seeU-Windows-x64.zip
+          Compress-Archive -Path dist\seeU\* -DestinationPath dist-installer\seeU-Windows-Portable.zip
 
-      - name: Publicar artefacto de instalacion
+      - name: Publicar Instalador Oficial (.exe) y Version Portable (.zip)
         uses: actions/upload-artifact@v4
         with:
-          name: seeU-Windows-x64
-          path: seeU-Windows-x64.zip
+          name: seeU-Instalador-Windows
+          path: |
+            dist-installer/seeU-Setup-x64.exe
+            dist-installer/seeU-Windows-Portable.zip
           retention-days: 30

@@ -1,5 +1,5 @@
 @echo off
-title seeU - Instalador Asistido para Windows
+title seeU - Instalador de Escritorio para Windows
 cd /d "%~dp0"
 
 echo.
@@ -17,69 +17,68 @@ echo               seeU ^| Supervisor Personal
 echo               Desarrollado por Seavuelo
 echo  ============================================================
 echo.
-echo  Bienvenido al instalador de seeU para Windows.
-echo  Esta herramienta configurara el entorno necesario para que
-echo  puedas usar tu supervisor de escritorio sin complicaciones.
+echo  Bienvenido al instalador guiado de seeU para Windows.
+echo  Este script configurara todo tu entorno automaticamente.
 echo.
-pause
 
-echo.
-echo [1/4] Verificando instalacion de Python en tu sistema...
+echo [1/4] Verificando instalacion de Python en Windows...
 python --version >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [ERROR] No se detecto Python instalado en tu equipo.
-    echo Para continuar, descarga e instala Python (version 3.10 o superior)
-    echo desde el sitio oficial marcando la casilla "Add python.exe to PATH":
-    echo https://www.python.org/downloads/
+    echo  [AVISO] No se detecto Python en tu sistema.
+    echo  Para que seeU funcione, por favor instala Python 3.10 o superior
+    echo  desde: https://www.python.org/downloads/
+    echo  (Asegurate de marcar la casilla "Add python.exe to PATH")
     echo.
     pause
     exit /b 1
 )
 python --version
-echo Python detectado correctamente.
-
+echo [OK] Python detectado.
 echo.
+
 echo [2/4] Creando entorno virtual aislado (.venv)...
 if not exist ".venv" (
     python -m venv .venv
-    echo Entorno virtual creado con exito.
+    echo [OK] Entorno virtual creado.
 ) else (
-    echo El entorno virtual ya existia, procediendo a actualizarlo.
+    echo [OK] Entorno virtual existente detectado.
 )
-
 echo.
-echo [3/4] Instalando dependencias necesarias (PyQt6, pywebview, google-genai)...
-call .venv\Scripts\activate.bat
-python -m pip install --upgrade pip >nul 2>&1
-pip install -r requirements.txt
+
+echo [3/4] Instalando dependencias (PyQt6, QtWebEngine, pywebview, google-genai)...
+echo Por favor espera un momento mientras se descargan e instalan las librerias...
+echo.
+".venv\Scripts\python.exe" -m pip install --upgrade pip
+".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo [ERROR] Ocurrio un inconveniente al instalar las dependencias.
+    echo [ERROR] Hubo un inconveniente al instalar las dependencias con pip.
     echo Revisa tu conexion a internet e intenta nuevamente.
     pause
     exit /b 1
 )
+echo [OK] Todas las dependencias quedaron instaladas correctamente.
+echo.
 
+echo [4/4] Creando acceso directo en tu Escritorio...
+powershell -Command "$s=(New-Object -COM WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop') + '\seeU.lnk'); $s.TargetPath='%~dp0iniciar_seeU.vbs'; $s.WorkingDirectory='%~dp0'; if(Test-Path '%~dp0assets\icon.ico'){$s.IconLocation='%~dp0assets\icon.ico'}; $s.Save()"
+echo [OK] Acceso directo 'seeU' creado en tu Escritorio.
 echo.
-echo [4/4] Instalando comando CLI y MCP para agentes externos...
-pip install -e . >nul 2>&1
 
-echo.
 echo  ============================================================
-echo   [INSTALACION COMPLETADA CON EXITO]
-echo  ============================================================
-echo.
-echo   Como usar seeU desde ahora:
-echo   - Haz doble clic en "iniciar_seeU.bat" para abrir la ventana.
-echo   - O ejecuta "python -m supervisor.cli --help" para interactuar
-echo     desde tu terminal o conectar agentes de IA externos.
-echo.
+echo   INSTALACION COMPLETADA CON EXITO
 echo  ============================================================
 echo.
-set /p arrancar="Deseas iniciar seeU en este momento? (S/N): "
-if /i "%arrancar%"=="S" (
-    start "" pythonw run_seeu.py
+echo   - Se creo un acceso directo de seeU en tu Escritorio.
+echo   - Al abrirlo, seeU se ejecutara en segundo plano SIN ninguna
+echo     ventana negra de consola y con desenfoque de cristal real.
+echo.
+set /p abrir="Deseas iniciar seeU ahora mismo? (S/N): "
+if /i "%abrir%"=="S" (
+    start "" wscript.exe "%~dp0iniciar_seeU.vbs"
 )
-echo Que tengas un dia productivo y tranquilo.
-pause
+echo.
+echo Disfruta de seeU. Cerrando instalador...
+timeout /t 3 >nul
+exit
