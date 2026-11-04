@@ -167,22 +167,22 @@ class TestSeeUCore(unittest.TestCase):
         # 1. Comparación de versiones
         self.assertEqual(parse_version("v1.0.3"), (1, 0, 3))
         self.assertEqual(parse_version("1.10.2"), (1, 10, 2))
-        self.assertTrue(is_newer_version("v1.0.5", "1.0.4"))
+        self.assertTrue(is_newer_version("v1.0.6", "1.0.5"))
         self.assertTrue(is_newer_version("v2.0.0", "1.9.9"))
-        self.assertFalse(is_newer_version("v1.0.3", "1.0.4"))
-        self.assertFalse(is_newer_version("v1.0.4", "1.0.4"))
+        self.assertFalse(is_newer_version("v1.0.4", "1.0.5"))
+        self.assertFalse(is_newer_version("v1.0.5", "1.0.5"))
 
         # 2. Preferencias de actualización
-        service = UpdateService(current_version="1.0.4")
-        self.assertTrue(service.set_update_preference("ignore", "v1.0.5"))
-        self.assertEqual(settings_repository.get_setting("update_ignored_version"), "v1.0.5")
+        service = UpdateService(current_version="1.0.5")
+        self.assertTrue(service.set_update_preference("ignore", "v1.0.6"))
+        self.assertEqual(settings_repository.get_setting("update_ignored_version"), "v1.0.6")
 
-        self.assertTrue(service.set_update_preference("remind_later", "v1.0.5"))
+        self.assertTrue(service.set_update_preference("remind_later", "v1.0.6"))
         self.assertIsNotNone(settings_repository.get_setting("update_remind_later_until"))
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.0.4")
+        self.assertEqual(api.get_app_version(), "1.0.5")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()
@@ -257,6 +257,29 @@ class TestSeeUCore(unittest.TestCase):
         api.restore_window()
         api.minimize_to_tray()
         api.move_orb_by(10, 10)
+
+    def test_always_on_top_and_window_drag(self):
+        api = seeU_API()
+        # 1. Always on top por defecto
+        self.assertTrue(api.get_always_on_top())
+
+        # 2. Alternar a modo fondo de escritorio
+        api.set_always_on_top(False)
+        self.assertFalse(api.get_always_on_top())
+        self.assertEqual(settings_repository.get_setting("always_on_top"), "false")
+
+        # 3. Volver a siempre sobrepuesto
+        api.set_always_on_top(True)
+        self.assertTrue(api.get_always_on_top())
+        self.assertEqual(settings_repository.get_setting("always_on_top"), "true")
+
+        # 4. Mover ventana completa y guardar posición
+        api.window_x = 400
+        api.window_y = 250
+        api.save_window_position()
+        self.assertEqual(settings_repository.get_setting("window_x"), "400")
+        self.assertEqual(settings_repository.get_setting("window_y"), "250")
+        api.move_window_by(20, -10)
 
 if __name__ == "__main__":
     unittest.main()

@@ -281,6 +281,26 @@ X-GNOME-Autostart-enabled=true
                     q_win.setGeometry(self.window_x, self.window_y, self.full_width, self.full_height)
                     q_win.raise_()
                     q_win.activateWindow()
+
+                    # Aplicar estado always_on_top configurado por el usuario
+                    is_top = self.get_always_on_top()
+                    if sys.platform == "win32":
+                        try:
+                            import ctypes
+                            hwnd = int(q_win.winId())
+                            HWND_TOPMOST = -1
+                            HWND_NOTOPMOST = -2
+                            SWP_NOMOVE = 0x0002
+                            SWP_NOSIZE = 0x0001
+                            SWP_NOACTIVATE = 0x0010
+                            ctypes.windll.user32.SetWindowPos(
+                                hwnd,
+                                HWND_TOPMOST if is_top else HWND_NOTOPMOST,
+                                0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                            )
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"[seeU] Error en restore_window: {e}")
 
@@ -300,6 +320,68 @@ X-GNOME-Autostart-enabled=true
             except Exception:
                 pass
         _run_in_gui(_do_move)
+
+    def move_window_by(self, dx, dy):
+        def _do_move():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win:
+                    new_x = q_win.x() + int(dx)
+                    new_y = q_win.y() + int(dy)
+                    q_win.move(new_x, new_y)
+                    self.window_x = new_x
+                    self.window_y = new_y
+            except Exception:
+                pass
+        _run_in_gui(_do_move)
+
+    def save_window_position(self):
+        settings_repository.set_setting("window_x", self.window_x)
+        settings_repository.set_setting("window_y", self.window_y)
+        return True
+
+    def get_always_on_top(self):
+        saved = settings_repository.get_setting("always_on_top")
+        return saved != "false"
+
+    def set_always_on_top(self, enable):
+        val = bool(enable)
+        settings_repository.set_setting("always_on_top", "true" if val else "false")
+
+        def _apply_on_top():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if not q_win:
+                    return
+
+                if sys.platform == "win32":
+                    import ctypes
+                    hwnd = int(q_win.winId())
+                    HWND_TOPMOST = -1
+                    HWND_NOTOPMOST = -2
+                    SWP_NOMOVE = 0x0002
+                    SWP_NOSIZE = 0x0001
+                    SWP_NOACTIVATE = 0x0010
+                    ctypes.windll.user32.SetWindowPos(
+                        hwnd,
+                        HWND_TOPMOST if val else HWND_NOTOPMOST,
+                        0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                    )
+                else:
+                    flags = q_win.windowFlags()
+                    if val:
+                        q_win.setWindowFlags(flags | QtCore.Qt.WindowType.WindowStaysOnTopHint)
+                    else:
+                        q_win.setWindowFlags(flags & ~QtCore.Qt.WindowType.WindowStaysOnTopHint)
+                    q_win.show()
+            except Exception as e:
+                print(f"[seeU] Error al aplicar always_on_top: {e}")
+
+        _run_in_gui(_apply_on_top)
+        return val
 
     def save_orb_position(self, x, y):
         self.orb_x = int(x)
@@ -425,6 +507,7 @@ def start_ui():
     html_file = current_dir / "index.html"
 
     api = seeU_API()
+    is_on_top = api.get_always_on_top()
 
     window = webview.create_window(
         title="seeU",
@@ -439,7 +522,7 @@ def start_ui():
         frameless=True,
         easy_drag=False,
         transparent=True,
-        on_top=True,
+        on_top=is_on_top,
         background_color='#000000'
     )
 

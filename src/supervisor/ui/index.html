@@ -183,6 +183,11 @@
     .drag-handle {
       -webkit-app-region: drag;
       cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
     }
     .no-drag {
       -webkit-app-region: no-drag;
@@ -235,8 +240,22 @@
           <button id="tab-btn-goals" onclick="onUserSwitchTab('goals')" class="segment-btn">Metas</button>
         </div>
 
-        <!-- Ajustes y Actualizaciones -->
+        <!-- Ajustes, Pin y Actualizaciones -->
         <div class="flex items-center gap-1.5 no-drag">
+          <!-- Botón Pin: Alternar Siempre Sobrepuesto / Fondo de Escritorio -->
+          <button 
+            id="pin-window-btn" 
+            type="button"
+            onclick="toggleAlwaysOnTop()" 
+            title="seeU fijado sobre todas las apps (Clic para pasar a Fondo de Escritorio)" 
+            class="w-6 h-6 rounded-md bg-white/20 hover:bg-white/30 border border-white/40 text-white transition flex items-center justify-center shadow-sm"
+          >
+            <svg id="pin-icon" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="17" x2="12" y2="22"></line>
+              <path d="M5 17h14v-2l-2-2V5a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v8l-2 2v2z"></path>
+            </svg>
+          </button>
+
           <!-- Botón indicador de actualización disponible (solo visible cuando hay update) -->
           <button 
             id="update-badge-btn" 
@@ -514,6 +533,34 @@
                 class="rounded bg-black/40 border-white/20 text-white focus:ring-0 cursor-pointer"
               />
             </label>
+
+            <!-- Modo de Visualización (Siempre Sobrepuesto vs Fondo de Escritorio) -->
+            <div class="pt-2 border-t border-white/[0.08]">
+              <label class="block text-[11px] font-medium text-neutral-200 mb-1.5">Visualización de notas:</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button 
+                  type="button" 
+                  id="pref-view-desktop" 
+                  onclick="setAlwaysOnTopMode(false)"
+                  class="py-2 px-2 text-[11px] rounded-xl border border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] transition text-center flex flex-col items-center gap-0.5"
+                >
+                  <span class="font-medium">Fondo Escritorio</span>
+                  <span class="text-[9px] text-neutral-300">Detrás de otras apps</span>
+                </button>
+                <button 
+                  type="button" 
+                  id="pref-view-ontop" 
+                  onclick="setAlwaysOnTopMode(true)"
+                  class="py-2 px-2 text-[11px] rounded-xl border border-white/40 bg-white/20 text-white font-medium transition text-center flex flex-col items-center gap-0.5 shadow-sm"
+                >
+                  <span class="font-medium">Siempre Sobrepuesto</span>
+                  <span class="text-[9px] text-neutral-300">Flota sobre todo</span>
+                </button>
+              </div>
+              <div class="text-[10px] text-neutral-400 mt-1 leading-tight">
+                En "Fondo Escritorio", seeU queda en tu pantalla de inicio; si abres otra app en pantalla completa, seeU queda detrás y no molesta.
+              </div>
+            </div>
 
             <!-- Modo de Minimización (Micro-Orbe vs Solo Bandeja) -->
             <div class="pt-2 border-t border-white/[0.08]">
@@ -1238,6 +1285,7 @@
           if (el && ver) el.textContent = `v${ver}`;
         });
         loadMinimizeModePreference();
+        loadAlwaysOnTopPreference();
         checkConnectionStatus();
       }
     }
@@ -1340,7 +1388,9 @@
           lastKnownDataVersion = ver || "0";
         });
         loadMinimizeModePreference();
+        loadAlwaysOnTopPreference();
       }
+      initFullWindowDrag();
       fetchData();
       checkOverdueTasks();
       startBackgroundSync();
@@ -1707,6 +1757,113 @@
           }
         });
       }
+    }
+
+    // Control de Visualización: Siempre Sobrepuesto vs Fondo de Escritorio
+    let currentAlwaysOnTop = true;
+
+    async function loadAlwaysOnTopPreference() {
+      try {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_always_on_top) {
+          currentAlwaysOnTop = await window.pywebview.api.get_always_on_top();
+          updateAlwaysOnTopUI(currentAlwaysOnTop);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function updateAlwaysOnTopUI(isTop) {
+      currentAlwaysOnTop = !!isTop;
+      const pinBtn = document.getElementById('pin-window-btn');
+      const pinIcon = document.getElementById('pin-icon');
+      const btnDesktop = document.getElementById('pref-view-desktop');
+      const btnOntop = document.getElementById('pref-view-ontop');
+
+      if (pinBtn && pinIcon) {
+        if (isTop) {
+          pinBtn.className = "w-6 h-6 rounded-md bg-white/20 hover:bg-white/30 border border-white/40 text-white transition flex items-center justify-center shadow-sm";
+          pinBtn.title = "seeU fijado sobre todas las apps (Clic para pasar a Fondo de Escritorio)";
+          pinIcon.setAttribute("fill", "currentColor");
+        } else {
+          pinBtn.className = "w-6 h-6 rounded-md bg-white/[0.04] hover:bg-white/[0.12] border border-white/[0.1] text-white/50 hover:text-white transition flex items-center justify-center";
+          pinBtn.title = "seeU en Fondo de Escritorio (Clic para fijar Sobrepuesto)";
+          pinIcon.setAttribute("fill", "none");
+        }
+      }
+
+      if (btnDesktop && btnOntop) {
+        if (isTop) {
+          btnOntop.className = "py-2 px-2 text-[11px] rounded-xl border border-white/40 bg-white/20 text-white font-medium transition text-center flex flex-col items-center gap-0.5 shadow-sm";
+          btnDesktop.className = "py-2 px-2 text-[11px] rounded-xl border border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] transition text-center flex flex-col items-center gap-0.5";
+        } else {
+          btnDesktop.className = "py-2 px-2 text-[11px] rounded-xl border border-white/40 bg-white/20 text-white font-medium transition text-center flex flex-col items-center gap-0.5 shadow-sm";
+          btnOntop.className = "py-2 px-2 text-[11px] rounded-xl border border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] transition text-center flex flex-col items-center gap-0.5";
+        }
+      }
+    }
+
+    async function setAlwaysOnTopMode(enable) {
+      updateAlwaysOnTopUI(enable);
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.set_always_on_top) {
+        await window.pywebview.api.set_always_on_top(enable);
+      }
+    }
+
+    async function toggleAlwaysOnTop() {
+      await setAlwaysOnTopMode(!currentAlwaysOnTop);
+    }
+
+    // Arrastre fluido de la ventana principal en tamaño normal
+    let isDraggingFullWindow = false;
+    let fullWinStartX = 0;
+    let fullWinStartY = 0;
+
+    function initFullWindowDrag() {
+      const handles = document.querySelectorAll('.drag-handle');
+      handles.forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          if (e.button !== 0) return;
+          if (e.target.closest('.no-drag') || e.target.closest('button') || e.target.closest('input') || e.target.closest('a')) {
+            return;
+          }
+          isDraggingFullWindow = true;
+          fullWinStartX = e.screenX;
+          fullWinStartY = e.screenY;
+        });
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingFullWindow) return;
+        if (e.buttons !== 1) {
+          isDraggingFullWindow = false;
+          return;
+        }
+        const dx = e.screenX - fullWinStartX;
+        const dy = e.screenY - fullWinStartY;
+        if (dx !== 0 || dy !== 0) {
+          fullWinStartX = e.screenX;
+          fullWinStartY = e.screenY;
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.move_window_by) {
+            window.pywebview.api.move_window_by(dx, dy);
+          }
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isDraggingFullWindow) {
+          isDraggingFullWindow = false;
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.save_window_position) {
+            window.pywebview.api.save_window_position();
+          }
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initFullWindowDrag);
+    } else {
+      initFullWindowDrag();
     }
 
     // Control de Minimización y Modos (Micro-Orbe vs Solo Bandeja)
