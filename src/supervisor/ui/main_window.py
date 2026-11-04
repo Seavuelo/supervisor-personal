@@ -190,6 +190,30 @@ X-GNOME-Autostart-enabled=true
         webbrowser.open(url)
 
     # --- Geometría y Control de Ventana ---
+    def get_minimize_mode(self):
+        return settings_repository.get_setting("minimize_mode") or "orb"
+
+    def set_minimize_mode(self, mode):
+        if mode in ("orb", "tray"):
+            settings_repository.set_setting("minimize_mode", mode)
+            return True
+        return False
+
+    def minimize_to_tray(self):
+        if not self.window:
+            return
+        self.window_x = self.window.x
+        self.window_y = self.window.y
+        settings_repository.set_setting("window_x", self.window_x)
+        settings_repository.set_setting("window_y", self.window_y)
+
+        def _hide():
+            from webview.platforms.qt import BrowserView
+            q_win = BrowserView.instances.get(self.window.uid)
+            if q_win:
+                q_win.hide()
+        _run_in_gui(_hide)
+
     def minimize_to_orb(self):
         if not self.window:
             return
@@ -199,27 +223,17 @@ X-GNOME-Autostart-enabled=true
         settings_repository.set_setting("window_x", self.window_x)
         settings_repository.set_setting("window_y", self.window_y)
 
-        # Redimensionar a micro-orbe
+        def _show_orb():
+            from webview.platforms.qt import BrowserView
+            q_win = BrowserView.instances.get(self.window.uid)
+            if q_win:
+                if q_win.isHidden():
+                    q_win.show()
+                q_win.resize(self.orb_size, self.orb_size)
+                q_win.move(self.orb_x, self.orb_y)
+        _run_in_gui(_show_orb)
         self.window.resize(self.orb_size, self.orb_size)
-
-        # Desplazamiento suave hacia la posición del orbe
-        start_x, start_y = self.window_x, self.window_y
-        target_x, target_y = self.orb_x, self.orb_y
-
-        def glide_to_orb():
-            steps = 7
-            for i in range(1, steps + 1):
-                t = i / steps
-                factor = 1.0 - (1.0 - t) ** 3
-                cx = int(start_x + (target_x - start_x) * factor)
-                cy = int(start_y + (target_y - start_y) * factor)
-                if self.window:
-                    self.window.move(cx, cy)
-                time.sleep(0.016)
-            if self.window:
-                self.window.move(target_x, target_y)
-
-        threading.Thread(target=glide_to_orb, daemon=True).start()
+        self.window.move(self.orb_x, self.orb_y)
 
     def restore_window(self):
         if not self.window:
@@ -230,14 +244,19 @@ X-GNOME-Autostart-enabled=true
         settings_repository.set_setting("orb_x", self.orb_x)
         settings_repository.set_setting("orb_y", self.orb_y)
 
+        def _show_window():
+            from webview.platforms.qt import BrowserView
+            q_win = BrowserView.instances.get(self.window.uid)
+            if q_win:
+                if q_win.isHidden():
+                    q_win.show()
+                q_win.resize(self.full_width, self.full_height)
+                q_win.move(self.window_x, self.window_y)
+                q_win.raise_()
+                q_win.activateWindow()
+        _run_in_gui(_show_window)
         self.window.resize(self.full_width, self.full_height)
         self.window.move(self.window_x, self.window_y)
-
-        # Al restaurar, forzar al frontend a ubicarse en el día actual
-        try:
-            self.window.evaluate_js("if(typeof resetToToday === 'function') resetToToday();")
-        except Exception:
-            pass
 
     def save_orb_position(self, x, y):
         self.orb_x = int(x)
@@ -265,62 +284,8 @@ _qt_invoker = _QtInvoker()
 def _run_in_gui(fn):
     QtCore.QCoreApplication.postEvent(_qt_invoker, _QtFnEvent(fn))
 
-def _apply_windows_acrylic_and_blur(hwnd):
-    """Aplica el efecto de desenfoque de cristal real (Acrylic Blur / DWM) en Windows 10 y 11."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        from ctypes import Structure, c_int, c_void_p, sizeof, byref
-
-        user32 = ctypes.windll.user32
-        dwmapi = ctypes.windll.dwmapi
-
-        # 1. Windows 11: DWMWA_USE_IMMERSIVE_DARK_MODE (20) y DWMWA_SYSTEMBACKDROP_TYPE (38)
-        try:
-            dark_mode = c_int(1)
-            dwmapi.DwmSetWindowAttribute(c_void_p(hwnd), c_int(20), byref(dark_mode), sizeof(dark_mode))
-
-            backdrop = c_int(4) # 4 = DWMSBT_TRANSIENTWINDOW (Acrylic Blur)
-            dwmapi.DwmSetWindowAttribute(c_void_p(hwnd), c_int(38), byref(backdrop), sizeof(backdrop))
-        except Exception:
-            pass
-
-        # 2. Windows 10 & Fallback Universal: SetWindowCompositionAttribute con AccentPolicy
-        class ACCENT_POLICY(Structure):
-            _fields_ = [
-                ("AccentState", c_int),
-                ("AccentFlags", c_int),
-                ("GradientColor", c_int),
-                ("AnimationId", c_int)
-            ]
-
-        class WINDOWCOMPOSITIONATTRIBDATA(Structure):
-            _fields_ = [
-                ("Attribute", c_int),
-                ("Data", c_void_p),
-                ("SizeOfData", c_int)
-            ]
-
-        accent = ACCENT_POLICY()
-        accent.AccentState = 4 # ACCENT_ENABLE_ACRYLICBLURBEHIND
-        accent.AccentFlags = 2
-        accent.GradientColor = 0xCC10121A # Tinte oscuro profundo
-        accent.AnimationId = 0
-
-        data = WINDOWCOMPOSITIONATTRIBDATA()
-        data.Attribute = 19 # WCA_ACCENT_POLICY
-        data.Data = ctypes.cast(ctypes.pointer(accent), c_void_p)
-        data.SizeOfData = sizeof(accent)
-
-        set_window_comp = getattr(user32, "SetWindowCompositionAttribute", None)
-        if set_window_comp:
-            set_window_comp(c_void_p(hwnd), byref(data))
-    except Exception as e:
-        print(f"[seeU] Blur DWM Windows: {e}")
-
 def _setup_system_tray_and_tool_window(window, api):
-    """Configura el icono en la bandeja del sistema, desenfoque en Windows y remueve la app de la barra de tareas."""
+    """Configura el icono en la bandeja del sistema y garantiza la transparencia real en Windows y Linux."""
     def _apply_in_gui():
         try:
             from PyQt6 import QtCore
@@ -337,20 +302,21 @@ def _setup_system_tray_and_tool_window(window, api):
                 # Ocultar de la barra de tareas principal (tint2 / taskbar tradicional)
                 q_win.setWindowFlag(QtCore.Qt.WindowType.Tool, True)
 
+                # Garantizar fondo transparente real por pixel para que bordes y orbe no tengan cuadro
+                q_win.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                q_win.setStyleSheet("background: transparent;")
+                if hasattr(q_win, 'webview'):
+                    q_win.webview.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                    q_win.webview.setStyleSheet("background: transparent;")
+                    if hasattr(q_win.webview, 'page') and q_win.webview.page():
+                        q_win.webview.page().setBackgroundColor(QtCore.Qt.GlobalColor.transparent)
+
                 # Icono de la ventana
                 if icon_file.exists():
                     app_icon = QIcon(str(icon_file))
                     q_win.setWindowIcon(app_icon)
                     if q_app:
                         q_app.setWindowIcon(app_icon)
-
-                # Desenfoque real de cristal en Windows
-                if sys.platform == "win32":
-                    try:
-                        hwnd = int(q_win.winId())
-                        _apply_windows_acrylic_and_blur(hwnd)
-                    except Exception as err:
-                        print(f"[seeU] Error aplicando blur Windows: {err}")
 
                 q_win.show()
 
@@ -378,16 +344,31 @@ def _setup_system_tray_and_tool_window(window, api):
                 menu = QMenu()
                 action_open = menu.addAction("Abrir seeU")
                 action_orb = menu.addAction("Minimizar a Micro-Orbe")
+                action_tray = menu.addAction("Ocultar en la Bandeja")
                 menu.addSeparator()
                 action_quit = menu.addAction("Salir de seeU")
 
-                action_open.triggered.connect(lambda: window.evaluate_js("restoreFromOrb();"))
+                def _restore_from_tray_action():
+                    if q_win and q_win.isHidden():
+                        q_win.show()
+                        q_win.raise_()
+                        q_win.activateWindow()
+                    window.evaluate_js("restoreFromOrb();")
+
+                def _hide_to_tray_action():
+                    window.evaluate_js("minimizeToTray();")
+
+                action_open.triggered.connect(_restore_from_tray_action)
                 action_orb.triggered.connect(lambda: window.evaluate_js("minimizeToOrb();"))
+                action_tray.triggered.connect(_hide_to_tray_action)
                 action_quit.triggered.connect(lambda: api.close_app())
 
                 def on_tray_activated(reason):
-                    if reason == QSystemTrayIcon.ActivationReason.Trigger:
-                        window.evaluate_js("if(document.body.classList.contains('orb-mode')){ restoreFromOrb(); } else { minimizeToOrb(); }")
+                    if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+                        if q_win and (q_win.isHidden() or not q_win.isVisible()):
+                            _restore_from_tray_action()
+                        else:
+                            window.evaluate_js("if(document.body.classList.contains('orb-mode') || document.getElementById('full-window').classList.contains('hidden')){ restoreFromOrb(); } else { requestMinimize(); }")
 
                 tray_icon.activated.connect(on_tray_activated)
                 tray_icon.setContextMenu(menu)

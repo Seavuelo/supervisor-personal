@@ -5,22 +5,29 @@
   <title>seeU</title>
   <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
   <style>
-    body {
+    html, body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
-      margin: 0;
-      padding: 0;
+      margin: 0 !important;
+      padding: 0 !important;
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-      background: transparent;
+      background: transparent !important;
+      background-color: transparent !important;
       user-select: none;
       -webkit-user-select: none;
+    }
+
+    body {
+      padding: 8px !important;
+      box-sizing: border-box;
     }
 
     body.orb-mode {
       padding: 0 !important;
       margin: 0 !important;
       background: transparent !important;
+      background-color: transparent !important;
       width: 42px !important;
       height: 42px !important;
       overflow: hidden !important;
@@ -206,7 +213,7 @@
         <div class="flex items-center gap-3 no-drag">
           <div class="flex items-center gap-1.5">
             <button onclick="requestCloseApp()" title="Cerrar seeU" class="w-3 h-3 rounded-full bg-white/25 hover:bg-red-400/80 transition"></button>
-            <button onclick="minimizeToOrb()" title="Minimizar a micro-orbe" class="w-3 h-3 rounded-full bg-white/25 hover:bg-amber-400/80 transition flex items-center justify-center group">
+            <button onclick="requestMinimize()" title="Minimizar seeU" class="w-3 h-3 rounded-full bg-white/25 hover:bg-amber-400/80 transition flex items-center justify-center group">
               <span class="hidden group-hover:block text-[8px] text-neutral-950 font-bold leading-none mb-0.5">-</span>
             </button>
           </div>
@@ -492,6 +499,34 @@
                 class="rounded bg-black/40 border-white/20 text-white focus:ring-0 cursor-pointer"
               />
             </label>
+
+            <!-- Modo de Minimización (Micro-Orbe vs Solo Bandeja) -->
+            <div class="pt-2 border-t border-white/[0.08]">
+              <label class="block text-[11px] font-medium text-neutral-200 mb-1.5">Al presionar minimizar:</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button 
+                  type="button" 
+                  id="pref-min-orb" 
+                  onclick="setMinimizeMode('orb')"
+                  class="py-2 px-2 text-[11px] rounded-xl border border-white/40 bg-white/20 text-white font-medium transition text-center flex flex-col items-center gap-0.5 shadow-sm"
+                >
+                  <span class="font-medium">Micro-Orbe</span>
+                  <span class="text-[9px] text-neutral-300">Ojito flotante</span>
+                </button>
+                <button 
+                  type="button" 
+                  id="pref-min-tray" 
+                  onclick="setMinimizeMode('tray')"
+                  class="py-2 px-2 text-[11px] rounded-xl border border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] transition text-center flex flex-col items-center gap-0.5"
+                >
+                  <span class="font-medium">Solo Bandeja</span>
+                  <span class="text-[9px] text-neutral-300">Icono en barra</span>
+                </button>
+              </div>
+              <div class="text-[10px] text-neutral-400 mt-1 leading-tight">
+                Elige "Solo Bandeja" si prefieres que la pantalla quede totalmente despejada al minimizar.
+              </div>
+            </div>
           </div>
 
           <!-- Créditos y Firma By Seavuelo -->
@@ -539,7 +574,7 @@
         </div>
         <div class="text-xs font-semibold text-white readable-text">¿Cerrar seeU?</div>
         <div class="text-[11px] text-neutral-300 mt-1 leading-snug">
-          ¿Seguro que quieres salir? Puedes minimizar al micro-orbe para mantenerlo disponible sin ocupar espacio.
+          ¿Seguro que quieres salir? Puedes minimizar para mantenerlo disponible sin ocupar espacio.
         </div>
 
         <div class="mt-4 space-y-2">
@@ -547,7 +582,7 @@
             onclick="confirmCloseMinimize()" 
             class="w-full py-2 text-xs font-medium rounded-xl bg-white/[0.2] hover:bg-white/[0.3] border border-white/[0.25] text-white transition flex items-center justify-center gap-1.5"
           >
-            <span>Minimizar a Micro-Orbe</span>
+            <span id="confirm-modal-minimize-text">Minimizar</span>
           </button>
           <button 
             onclick="confirmCloseExit()" 
@@ -1124,6 +1159,7 @@
           const chk = document.getElementById('pref-autostart');
           if (chk) chk.checked = status;
         });
+        loadMinimizeModePreference();
         checkConnectionStatus();
       }
     }
@@ -1225,6 +1261,7 @@
         window.pywebview.api.get_data_version().then(ver => {
           lastKnownDataVersion = ver || "0";
         });
+        loadMinimizeModePreference();
       }
       fetchData();
       checkOverdueTasks();
@@ -1593,7 +1630,64 @@
       }
     }
 
-    // Control de Micro-Orbe
+    // Control de Minimización y Modos (Micro-Orbe vs Solo Bandeja)
+    let currentMinimizeMode = 'orb';
+
+    async function loadMinimizeModePreference() {
+      try {
+        if (window.pywebview && window.pywebview.api) {
+          currentMinimizeMode = await window.pywebview.api.get_minimize_mode() || 'orb';
+          updateMinimizeModeUI(currentMinimizeMode);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function updateMinimizeModeUI(mode) {
+      currentMinimizeMode = mode;
+      const orbBtn = document.getElementById('pref-min-orb');
+      const trayBtn = document.getElementById('pref-min-tray');
+      const modalMinText = document.getElementById('confirm-modal-minimize-text');
+
+      if (orbBtn && trayBtn) {
+        if (mode === 'tray') {
+          trayBtn.className = 'py-2 px-2 text-[11px] rounded-xl border border-white/40 bg-white/20 text-white font-medium transition text-center flex flex-col items-center gap-0.5 shadow-sm';
+          orbBtn.className = 'py-2 px-2 text-[11px] rounded-xl border border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] transition text-center flex flex-col items-center gap-0.5';
+        } else {
+          orbBtn.className = 'py-2 px-2 text-[11px] rounded-xl border border-white/40 bg-white/20 text-white font-medium transition text-center flex flex-col items-center gap-0.5 shadow-sm';
+          trayBtn.className = 'py-2 px-2 text-[11px] rounded-xl border border-white/[0.1] bg-white/[0.04] text-neutral-300 hover:bg-white/[0.08] transition text-center flex flex-col items-center gap-0.5';
+        }
+      }
+
+      if (modalMinText) {
+        modalMinText.textContent = (mode === 'tray') ? 'Minimizar a la Bandeja' : 'Minimizar a Micro-Orbe';
+      }
+    }
+
+    async function setMinimizeMode(mode) {
+      updateMinimizeModeUI(mode);
+      if (window.pywebview && window.pywebview.api) {
+        await window.pywebview.api.set_minimize_mode(mode);
+      }
+    }
+
+    function requestMinimize() {
+      if (currentMinimizeMode === 'tray') {
+        minimizeToTray();
+      } else {
+        minimizeToOrb();
+      }
+    }
+
+    function minimizeToTray() {
+      document.getElementById('full-window').classList.add('hidden');
+      document.getElementById('minimized-orb').classList.add('hidden');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.minimize_to_tray();
+      }
+    }
+
     function minimizeToOrb() {
       document.body.classList.add('orb-mode');
       document.getElementById('full-window').classList.add('hidden');
@@ -1613,7 +1707,7 @@
       }
     }
 
-    // Umbral de Arrastre vs Clic del Orbe
+    // Umbral de Arrastre vs Clic del Orbe (robusto y sin bloqueos de evento)
     let orbMouseDownTime = 0;
     let orbStartX = 0;
     let orbStartY = 0;
@@ -1623,35 +1717,27 @@
 
     orbEl.addEventListener('mousedown', (e) => {
       orbMouseDownTime = Date.now();
-      orbStartX = e.screenX;
-      orbStartY = e.screenY;
+      orbStartX = e.clientX;
+      orbStartY = e.clientY;
       orbDidDrag = false;
     });
 
-    window.addEventListener('mousemove', (e) => {
+    orbEl.addEventListener('mousemove', (e) => {
       if (orbMouseDownTime > 0) {
-        const dist = Math.hypot(e.screenX - orbStartX, e.screenY - orbStartY);
-        if (dist > 5) {
+        const dist = Math.hypot(e.clientX - orbStartX, e.clientY - orbStartY);
+        if (dist > 6) {
           orbDidDrag = true;
         }
       }
     });
 
-    window.addEventListener('mouseup', () => {
-      setTimeout(() => {
-        orbMouseDownTime = 0;
-      }, 50);
-    });
-
-    orbEl.addEventListener('click', (e) => {
-      const duration = Date.now() - orbMouseDownTime;
-      if (orbDidDrag || duration > 260) {
-        e.stopPropagation();
-        e.preventDefault();
-        orbDidDrag = false;
-        return;
+    orbEl.addEventListener('mouseup', (e) => {
+      const elapsed = Date.now() - orbMouseDownTime;
+      orbMouseDownTime = 0;
+      if (!orbDidDrag && elapsed < 800) {
+        restoreFromOrb();
       }
-      restoreFromOrb();
+      orbDidDrag = false;
     });
 
     function requestCloseApp() {
@@ -1667,7 +1753,7 @@
 
     function confirmCloseMinimize() {
       cancelCloseModal();
-      minimizeToOrb();
+      requestMinimize();
     }
 
     function confirmCloseExit() {
@@ -1690,7 +1776,7 @@
         }
 
         if (!document.getElementById('full-window').classList.contains('hidden')) {
-          minimizeToOrb();
+          requestMinimize();
         } else {
           restoreFromOrb();
         }

@@ -141,6 +141,26 @@ class TestSeeUCore(unittest.TestCase):
             if desktop_file.exists():
                 desktop_file.unlink()
 
+    def test_minimize_mode_setting(self):
+        api = seeU_API()
+        # Por defecto debe ser orb
+        self.assertEqual(api.get_minimize_mode(), "orb")
+
+        # Cambiar a modo bandeja
+        res = api.set_minimize_mode("tray")
+        self.assertTrue(res)
+        self.assertEqual(api.get_minimize_mode(), "tray")
+
+        # Cambiar de vuelta a orb
+        res2 = api.set_minimize_mode("orb")
+        self.assertTrue(res2)
+        self.assertEqual(api.get_minimize_mode(), "orb")
+
+        # Validar rechazo de modos inválidos
+        invalid_res = api.set_minimize_mode("invalid_mode")
+        self.assertFalse(invalid_res)
+        self.assertEqual(api.get_minimize_mode(), "orb")
+
     def test_monthly_summary_and_stats(self):
         service = TaskService()
         hoy = date.today().strftime("%Y-%m-%d")
