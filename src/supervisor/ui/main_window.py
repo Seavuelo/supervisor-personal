@@ -113,19 +113,31 @@ class seeU_API:
         settings_repository.set_setting(key, value)
         return True
 
+    def _get_autostart_file_path(self):
+        if sys.platform == "win32":
+            appdata = os.environ.get("APPDATA")
+            if appdata:
+                return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "seeU.bat"
+            return Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "seeU.bat"
+        return Path.home() / ".config" / "autostart" / "seeU.desktop"
+
     def get_autostart_status(self):
-        desktop_file = Path.home() / ".config" / "autostart" / "seeU.desktop"
-        return desktop_file.exists()
+        target = self._get_autostart_file_path()
+        return target.exists()
 
     def set_autostart(self, enable):
-        autostart_dir = Path.home() / ".config" / "autostart"
-        desktop_file = autostart_dir / "seeU.desktop"
-
+        target = self._get_autostart_file_path()
         if enable:
-            autostart_dir.mkdir(parents=True, exist_ok=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
             python_bin = sys.executable
             main_script = Path(__file__).resolve().parent.parent / "main.py"
-            content = f"""[Desktop Entry]
+            if sys.platform == "win32":
+                # En Windows usamos pythonw si está disponible para evitar la consola negra
+                pythonw_bin = python_bin.replace("python.exe", "pythonw.exe")
+                exe = pythonw_bin if os.path.exists(pythonw_bin) else python_bin
+                content = f'@echo off\nstart "" "{exe}" "{main_script}"\n'
+            else:
+                content = f"""[Desktop Entry]
 Type=Application
 Name=seeU
 Comment=Supervisor personal de tareas y agenda
@@ -134,12 +146,15 @@ Terminal=false
 Categories=Utility;
 X-GNOME-Autostart-enabled=true
 """
-            desktop_file.write_text(content, encoding="utf-8")
+            target.write_text(content, encoding="utf-8")
             settings_repository.set_setting("autostart", "true")
             return True
         else:
-            if desktop_file.exists():
-                desktop_file.unlink()
+            if target.exists():
+                try:
+                    target.unlink()
+                except Exception:
+                    pass
             settings_repository.set_setting("autostart", "false")
             return False
 
