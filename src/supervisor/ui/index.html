@@ -235,8 +235,23 @@
           <button id="tab-btn-goals" onclick="onUserSwitchTab('goals')" class="segment-btn">Metas</button>
         </div>
 
-        <!-- Ajustes y Minimizar -->
-        <div class="flex items-center gap-1 no-drag">
+        <!-- Ajustes y Actualizaciones -->
+        <div class="flex items-center gap-1.5 no-drag">
+          <!-- Botón indicador de actualización disponible (solo visible cuando hay update) -->
+          <button 
+            id="update-badge-btn" 
+            onclick="openUpdateModal()" 
+            title="Nueva actualización disponible de seeU" 
+            class="hidden px-2 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 transition flex items-center gap-1 animate-pulse"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span id="update-badge-tag" class="text-[9px] font-mono font-bold"></span>
+          </button>
+
           <button onclick="toggleSettingsView()" title="Ajustes de seeU" class="w-6 h-6 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition flex items-center justify-center">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -527,6 +542,23 @@
                 Elige "Solo Bandeja" si prefieres que la pantalla quede totalmente despejada al minimizar.
               </div>
             </div>
+
+            <!-- Versión y Comprobación Manual de Actualizaciones -->
+            <div class="pt-2 border-t border-white/[0.08] flex items-center justify-between">
+              <div>
+                <span class="text-[11px] font-medium text-neutral-200">Versión instalada</span>
+                <span id="settings-app-version" class="text-[10px] text-neutral-400 font-mono block">v1.0.3</span>
+              </div>
+              <button 
+                type="button" 
+                onclick="manualCheckUpdates()" 
+                class="px-2.5 py-1 text-[10px] font-medium rounded-lg bg-white/[0.08] hover:bg-white/[0.16] border border-white/[0.12] text-white transition flex items-center gap-1"
+                id="manual-update-btn"
+              >
+                <span>Buscar actualizaciones</span>
+              </button>
+            </div>
+            <div id="manual-update-msg" class="text-[10px] font-medium text-neutral-400 hidden mt-0.5"></div>
           </div>
 
           <!-- Créditos y Firma By Seavuelo -->
@@ -595,6 +627,48 @@
             class="w-full py-1 text-[11px] text-neutral-400 hover:text-white transition"
           >
             Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DE ACTUALIZACIÓN DISPONIBLE -->
+    <div id="update-modal" class="hidden absolute inset-0 z-50 bg-black/85 backdrop-blur-md rounded-3xl flex items-center justify-center p-6 no-drag">
+      <div class="glass-tile rounded-2xl p-5 border border-white/20 bg-neutral-950/95 shadow-2xl text-center max-w-[310px] w-full">
+        <div class="w-10 h-10 mx-auto rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mb-3 text-emerald-400">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+        <div id="update-modal-title" class="text-xs font-semibold text-white readable-text">Nueva versión disponible</div>
+        <div id="update-modal-versions" class="text-[10px] text-neutral-300 font-mono mt-1">
+          Actual: v1.0.3 &rarr; Nueva: v...
+        </div>
+
+        <div id="update-modal-notes" class="mt-3 p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.1] text-[10px] text-neutral-300 text-left max-h-[110px] overflow-y-auto leading-relaxed font-sans">
+          Cargando notas de la versión...
+        </div>
+
+        <div class="mt-4 space-y-2">
+          <button 
+            onclick="acceptUpdateDownload()" 
+            class="w-full py-2 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition flex items-center justify-center gap-1.5 shadow"
+          >
+            <span>Descargar e Instalar</span>
+          </button>
+          <button 
+            onclick="remindUpdateLater()" 
+            class="w-full py-1.5 text-xs font-normal rounded-xl bg-white/[0.1] hover:bg-white/[0.2] border border-white/[0.15] text-white transition"
+          >
+            Recordar más tarde
+          </button>
+          <button 
+            onclick="ignoreThisUpdate()" 
+            class="w-full py-1 text-[10px] text-neutral-400 hover:text-white transition"
+          >
+            Ignorar esta versión
           </button>
         </div>
       </div>
@@ -1159,6 +1233,10 @@
           const chk = document.getElementById('pref-autostart');
           if (chk) chk.checked = status;
         });
+        window.pywebview.api.get_app_version().then(ver => {
+          const el = document.getElementById('settings-app-version');
+          if (el && ver) el.textContent = `v${ver}`;
+        });
         loadMinimizeModePreference();
         checkConnectionStatus();
       }
@@ -1266,6 +1344,7 @@
       fetchData();
       checkOverdueTasks();
       startBackgroundSync();
+      setTimeout(checkForUpdatesOnStart, 1500);
     });
 
     // Envío desde la entrada de texto rápida
@@ -1767,8 +1846,127 @@
       requestCloseApp();
     }
 
+    // Sistema de Actualizaciones Automáticas
+    let latestUpdateInfo = null;
+
+    async function checkForUpdatesOnStart() {
+      if (!window.pywebview || !window.pywebview.api) return;
+      try {
+        const res = await window.pywebview.api.check_for_updates(false);
+        if (res && res.update_available) {
+          handleUpdateFound(res, false);
+        }
+      } catch (err) {
+        console.error('Error al comprobar actualizaciones:', err);
+      }
+    }
+
+    async function manualCheckUpdates() {
+      const msg = document.getElementById('manual-update-msg');
+      if (msg) {
+        msg.classList.remove('hidden');
+        msg.textContent = 'Comprobando en GitHub Releases...';
+        msg.className = 'text-[10px] font-medium text-neutral-300';
+      }
+
+      try {
+        if (window.pywebview && window.pywebview.api) {
+          const res = await window.pywebview.api.check_for_updates(true);
+          if (res && res.update_available) {
+            if (msg) {
+              msg.textContent = `¡Nueva versión ${res.latest_version} disponible!`;
+              msg.className = 'text-[10px] font-medium text-emerald-400';
+            }
+            handleUpdateFound(res, true);
+          } else {
+            if (msg) {
+              msg.textContent = `seeU está al día en la versión v${res.current_version}.`;
+              msg.className = 'text-[10px] font-medium text-neutral-300';
+            }
+          }
+        }
+      } catch (err) {
+        if (msg) {
+          msg.textContent = 'No se pudo conectar al servidor de versiones.';
+          msg.className = 'text-[10px] font-medium text-amber-300';
+        }
+      }
+    }
+
+    function handleUpdateFound(info, showModalDirectly = false) {
+      latestUpdateInfo = info;
+      const badgeBtn = document.getElementById('update-badge-btn');
+      const badgeTag = document.getElementById('update-badge-tag');
+
+      if (badgeBtn && badgeTag) {
+        badgeTag.textContent = info.latest_version;
+        badgeBtn.classList.remove('hidden');
+      }
+
+      if (showModalDirectly) {
+        openUpdateModal();
+      }
+    }
+
+    function openUpdateModal() {
+      if (!latestUpdateInfo) return;
+      userInteractionPauseUntil = Date.now() + 30000;
+
+      const modal = document.getElementById('update-modal');
+      const titleEl = document.getElementById('update-modal-title');
+      const verEl = document.getElementById('update-modal-versions');
+      const notesEl = document.getElementById('update-modal-notes');
+
+      if (titleEl) titleEl.textContent = `Nueva versión disponible: ${latestUpdateInfo.latest_version}`;
+      if (verEl) verEl.textContent = `Actual: v${latestUpdateInfo.current_version} → Nueva: ${latestUpdateInfo.latest_version}`;
+      if (notesEl) {
+        notesEl.textContent = latestUpdateInfo.release_notes || 'Mejoras de rendimiento y estabilidad en seeU.';
+      }
+
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeUpdateModal() {
+      const modal = document.getElementById('update-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function acceptUpdateDownload() {
+      closeUpdateModal();
+      if (!latestUpdateInfo) return;
+      const url = latestUpdateInfo.download_url || latestUpdateInfo.release_url;
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.open_external_url(url);
+      }
+    }
+
+    async function remindUpdateLater() {
+      closeUpdateModal();
+      if (!latestUpdateInfo) return;
+      if (window.pywebview && window.pywebview.api) {
+        await window.pywebview.api.set_update_preference('remind_later', latestUpdateInfo.latest_version);
+      }
+    }
+
+    async function ignoreThisUpdate() {
+      closeUpdateModal();
+      if (!latestUpdateInfo) return;
+      const badgeBtn = document.getElementById('update-badge-btn');
+      if (badgeBtn) badgeBtn.classList.add('hidden');
+
+      if (window.pywebview && window.pywebview.api) {
+        await window.pywebview.api.set_update_preference('ignore', latestUpdateInfo.latest_version);
+      }
+    }
+
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        const updateModal = document.getElementById('update-modal');
+        if (updateModal && !updateModal.classList.contains('hidden')) {
+          closeUpdateModal();
+          return;
+        }
+
         const confirmModal = document.getElementById('confirm-close-modal');
         if (confirmModal && !confirmModal.classList.contains('hidden')) {
           cancelCloseModal();

@@ -8,7 +8,17 @@ from PyQt6 import QtCore
 from supervisor.services.task_service import TaskService
 from supervisor.services.goal_service import GoalService
 from supervisor.services.ai_service import AIService
+from supervisor.services.update_service import UpdateService
 from supervisor.repositories import settings_repository
+
+# Mutex global en Windows para que el instalador detecte si seeU está en ejecución
+_app_mutex = None
+if sys.platform == "win32":
+    try:
+        import ctypes
+        _app_mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "seeU_Personal_Supervisor_Mutex")
+    except Exception:
+        pass
 
 class seeU_API:
     def __init__(self):
@@ -16,6 +26,7 @@ class seeU_API:
         self.task_service = TaskService()
         self.goal_service = GoalService()
         self.ai_service = AIService()
+        self.update_service = UpdateService()
 
         # Coordenadas persistentes del orbe y la ventana
         saved_orb_x = settings_repository.get_setting("orb_x")
@@ -115,6 +126,16 @@ class seeU_API:
 
     def test_connection(self):
         return self.ai_service.test_connection()
+
+    # --- Actualizaciones y Versión ---
+    def check_for_updates(self, manual=False):
+        return self.update_service.check_for_updates(manual=manual)
+
+    def set_update_preference(self, action, version):
+        return self.update_service.set_update_preference(action, version)
+
+    def get_app_version(self):
+        return self.update_service.current_version
 
     # --- Configuraciones y Autostart ---
     def get_setting(self, key, default=""):

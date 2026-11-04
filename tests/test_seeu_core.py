@@ -161,6 +161,29 @@ class TestSeeUCore(unittest.TestCase):
         self.assertFalse(invalid_res)
         self.assertEqual(api.get_minimize_mode(), "orb")
 
+    def test_update_service_and_version_comparison(self):
+        from supervisor.services.update_service import parse_version, is_newer_version, UpdateService
+
+        # 1. Comparación de versiones
+        self.assertEqual(parse_version("v1.0.3"), (1, 0, 3))
+        self.assertEqual(parse_version("1.10.2"), (1, 10, 2))
+        self.assertTrue(is_newer_version("v1.0.4", "1.0.3"))
+        self.assertTrue(is_newer_version("v2.0.0", "1.9.9"))
+        self.assertFalse(is_newer_version("v1.0.2", "1.0.3"))
+        self.assertFalse(is_newer_version("v1.0.3", "1.0.3"))
+
+        # 2. Preferencias de actualización
+        service = UpdateService(current_version="1.0.3")
+        self.assertTrue(service.set_update_preference("ignore", "v1.0.4"))
+        self.assertEqual(settings_repository.get_setting("update_ignored_version"), "v1.0.4")
+
+        self.assertTrue(service.set_update_preference("remind_later", "v1.0.4"))
+        self.assertIsNotNone(settings_repository.get_setting("update_remind_later_until"))
+
+        # 3. Métodos en ver de la API
+        api = seeU_API()
+        self.assertEqual(api.get_app_version(), "1.0.3")
+
     def test_monthly_summary_and_stats(self):
         service = TaskService()
         hoy = date.today().strftime("%Y-%m-%d")
