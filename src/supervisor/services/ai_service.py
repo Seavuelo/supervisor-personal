@@ -8,11 +8,19 @@ from supervisor.repositories import settings_repository
 
 load_dotenv()
 
+# Modelos oficiales soportados por Google AI Studio
+CANDIDATE_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+]
+
 class AIService:
     def __init__(self):
         db_key = settings_repository.get_setting("gemini_api_key")
         self.api_key = db_key or os.getenv("GEMINI_API_KEY", "")
         self.client = None
+        self.active_model = "gemini-3.5-flash"
         self.history: List[Dict[str, str]] = []
         self._init_client()
 
@@ -57,29 +65,41 @@ class AIService:
                 "message": "Librería google-genai no inicializada."
             }
 
-        try:
-            response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents="Di 'OK' para verificar conexion.",
-            )
-            if response and response.text:
-                return {
-                    "status": "ok",
-                    "message": "Conectado a Gemini 2.5 Flash con éxito."
-                }
-        except Exception as e:
-            err_msg = str(e)
-            if "API_KEY_INVALID" in err_msg or "400" in err_msg or "expired" in err_msg.lower():
-                return {
-                    "status": "error",
-                    "message": "Clave de API inválida o expirada."
-                }
+        # Probar modelos candidatos para evitar 404 de modelos discontinuados o 503 de alta demanda
+        last_error = ""
+        for model_name in CANDIDATE_MODELS:
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents="Responde solo la palabra OK",
+                )
+                if response and response.text:
+                    self.active_model = model_name
+                    return {
+                        "status": "ok",
+                        "model": model_name,
+                        "message": f"Conectado a Google Gemini ({model_name}) con éxito."
+                    }
+            except Exception as e:
+                last_error = str(e)
+                print(f"[seeU] Modelo {model_name} no disponible: {e}")
+                continue
+
+        # Diagnóstico claro si todos fallan
+        if "API_KEY_INVALID" in last_error or "400" in last_error or "expired" in last_error.lower():
             return {
                 "status": "error",
-                "message": f"Error de conexión: {err_msg[:60]}"
+                "message": "Clave de API inválida o expirada. Verifica en Google AI Studio."
             }
-
-        return {"status": "error", "message": "No se recibió respuesta válida."}
+        elif "404" in last_error:
+            return {
+                "status": "error",
+                "message": "El endpoint del modelo no está disponible. Probando alternativas..."
+            }
+        return {
+            "status": "error",
+            "message": f"Error de conexión: {last_error[:70]}"
+        }
 
     def clear_history(self):
         """Reinicia el contexto de la conversación con el agente."""
@@ -104,13 +124,12 @@ class AIService:
         if self.client:
             try:
                 result = self._call_gemini_conversational()
-                # Registrar respuesta de la IA en el historial
                 assistant_msg = result.get("message") or result.get("question") or ""
                 if assistant_msg:
                     self.history.append({"role": "assistant", "text": assistant_msg})
                 return result
             except Exception as e:
-                print(f"[seeU] Fallback a motor local tras error de API: {e}")
+                print(f"[seeU] Error llamando a Gemini ({e}), probando fallback...")
 
         # Motor Local Autónomo adaptativo
         result = self._local_conversational_agent(text)
@@ -123,7 +142,7 @@ class AIService:
         now = datetime.now()
         fecha_actual = now.strftime("%Y-%m-%d (%A)")
 
-        # Formatear el historial de conversación para darle contexto completo a Gemini
+        # Historial de conversación
         history_str = "\n".join([f"{msg['role'].upper()}: {msg['text']}" for msg in self.history])
 
         prompt = f"""
@@ -134,27 +153,27 @@ Fecha y hora de referencia: {fecha_actual}, {now.strftime("%H:%M")}.
 HISTORIAL DE LA CONVERSACIÓN RECIENTE:
 {history_str}
 
-REGLAS DE COMPORTAMIENTO COMO AGENTE CONVERSACIONAL:
-1. NUNCA respondas con plantillas estáticas repetitivas ni seas robótico. CERO emojis. Tono sereno, profesional y reconfortante.
+REGLAS DE COMPORTAMIENTO:
+1. CERO emojis. Tono sereno, directo y reconfortante. Sin marketing ni frases vacías.
 2. Si el usuario rechaza algo (ej: "no quiero estudiar", "quiero otras actividades", "otra cosa"):
-   - Adapta el rumbo con flexibilidad. Pregúntale qué tipo de cosas le apetecen hoy (ej: tareas prácticas, ordenar pendientes, descanso activo, desconectar) y cuánto tiempo tiene disponible.
-3. Si el usuario da un plazo o tiempo disponible (ej: "tengo 40 minutos", "tengo 1 hora"):
-   - Desglosa un plan realista a la medida exacta de ese tiempo (ej: si tiene 40 min: bloque de 20 min + 5 descanso + 15 min de cierre).
+   - Cambia de rumbo con flexibilidad. Pregúntale qué tipo de actividades prefiere hoy (prácticas, organizar pendientes, descanso activo) y cuánto tiempo tiene.
+3. Si el usuario da un plazo o tiempo disponible (ej: "tengo 40 minutos", "1 hora"):
+   - Desglosa un plan realista y adaptable a ese tiempo exacto con pausas breves.
 4. Si el usuario propone algo vago (ej: "quiero estudiar"):
-   - Pregúntale de forma natural qué materia o proyecto tiene en mente, o qué le causa más fricción.
-5. Si es una cita o compromiso (ej: "médico", "dentista") sin hora:
+   - Pregúntale de forma natural qué materia o proyecto tiene en mente, o qué le genera más resistencia para empezar.
+5. Si es una cita o compromiso sin hora:
    - Pregúntale a qué hora está programada.
-6. Si la propuesta ya está clara y acordada:
-   - Proporciona un desglose de tareas concretas listas para guardar.
+6. Si la propuesta ya está clara o el usuario la aprobó:
+   - Devuelve la lista de tareas concretas listas para guardar en su Foco o Agenda.
 
-ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
+RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
 {{
   "action": "question" | "propose_tasks" | "scheduled_task" | "quick_task",
   "message": "Tu respuesta conversacional articulada al usuario",
-  "question": "Pregunta de seguimiento si aplica",
-  "options": ["Opcion sugerida 1", "Opcion sugerida 2", "Opcion sugerida 3"],
+  "question": "Pregunta si aplica",
+  "options": ["Opcion 1", "Opcion 2", "Opcion 3"],
   "allow_custom": true,
-  "custom_placeholder": "Placeholder para que el usuario responda libremente",
+  "custom_placeholder": "Placeholder para responder",
   "is_goal": true | false,
   "goal_title": "Título si es meta",
   "tasks": [
@@ -162,14 +181,27 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
   ]
 }}
 """
-        response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-        )
-        raw_text = response.text.strip()
-        clean_json = re.sub(r"^```(?:json)?\s*", "", raw_text)
-        clean_json = re.sub(r"\s*```$", "", clean_json)
-        return json.loads(clean_json)
+        # Ejecutar con modelo activo o probar candidatos
+        last_err = None
+        models_to_try = [self.active_model] + [m for m in CANDIDATE_MODELS if m != self.active_model]
+
+        for m_name in models_to_try:
+            try:
+                response = self.client.models.generate_content(
+                    model=m_name,
+                    contents=prompt,
+                )
+                self.active_model = m_name
+                raw_text = response.text.strip()
+                clean_json = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                clean_json = re.sub(r"\s*```$", "", clean_json)
+                return json.loads(clean_json)
+            except Exception as e:
+                last_err = e
+                print(f"[seeU] Reintento con siguiente modelo tras fallo en {m_name}: {e}")
+                continue
+
+        raise last_err or Exception("No se pudo obtener respuesta de ningún modelo Gemini.")
 
     def _local_conversational_agent(self, current_text: str) -> Dict[str, Any]:
         """
@@ -179,20 +211,17 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
         lower = current_text.lower().strip()
         now = datetime.now()
 
-        # Revisar historial previo para saber en qué estábamos hablando
         prev_user_msgs = [m["text"] for m in self.history[:-1] if m["role"] == "user"]
         prev_assistant_msgs = [m["text"] for m in self.history if m["role"] == "assistant"]
         last_assistant_msg = prev_assistant_msgs[-1].lower() if prev_assistant_msgs else ""
         last_user_msg = prev_user_msgs[-1].lower() if prev_user_msgs else ""
 
-        # Detección de hora explícita
         time_match = re.search(r"(\d{1,2}:\d{2})", lower)
         hour_match = re.search(r"a las (\d{1,2})", lower)
         detected_time = time_match.group(1) if time_match else (f"{int(hour_match.group(1)):02d}:00" if hour_match else None)
 
         # 0. RESOLUCIÓN DE HORA TRAS PREGUNTA DE CITA PREVIA
         if detected_time and ("a qué hora" in last_assistant_msg or "agendemos" in last_assistant_msg):
-            # Encontrar el texto de la cita en el mensaje anterior
             palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
             appt_title = next((m for m in reversed(prev_user_msgs) if any(w in m.lower() for w in palabras_cita)), "Cita médica")
             return {
@@ -210,7 +239,6 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
             }
 
         # 1. DETECCIÓN DE RECHAZO O CAMBIO DE RUMBO
-        # Ej: "no quiero otras actividades", "no", "otra cosa", "cambiar", "no me gusta", "prefiero otra cosa"
         if any(w in lower for w in ["no quiero", "otra actividad", "otras actividades", "otra cosa", "cambiar", "no me gusta", "algo distinto", "mejor no"]):
             return {
                 "action": "question",
@@ -226,7 +254,6 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
             }
 
         # 2. DETECCIÓN DE TIEMPO DISPONIBLE
-        # Ej: "tengo 40 minutos", "tengo 1 hora", "30 min", "media hora"
         time_avail_match = re.search(r"(\d+)\s*(?:minutos|min|m\b)", lower)
         hour_avail_match = re.search(r"(\d+)\s*(?:horas|hora|h\b)", lower)
         is_half_hour = "media hora" in lower
@@ -240,7 +267,6 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
             minutes_available = 30
 
         if minutes_available:
-            # Calcular bloques inteligentes adaptados al tiempo real del usuario
             if minutes_available <= 25:
                 tasks = [
                     {"title": f"Foco único de alta prioridad ({minutes_available - 5} min)", "tag": f"{minutes_available - 5} min", "task_type": "micro_step"},
@@ -271,10 +297,6 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
 
         # 3. DETECCIÓN DE CITA MÉDICA O REUNIÓN
         palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
-        time_match = re.search(r"(\d{1,2}:\d{2})", lower)
-        hour_match = re.search(r"a las (\d{1,2})", lower)
-        detected_time = time_match.group(1) if time_match else (f"{int(hour_match.group(1)):02d}:00" if hour_match else None)
-
         dias_map = {"lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6}
         detected_date = None
         detected_day_name = None
@@ -298,7 +320,6 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
 
         if any(w in lower for w in palabras_cita) or (detected_date and detected_date != now.strftime("%Y-%m-%d")):
             if not detected_time:
-                date_str = detected_day_name or "la cita"
                 return {
                     "action": "question",
                     "message": f"Entendido, agendemos {current_text}. ¿A qué hora está programada?",
@@ -356,8 +377,7 @@ ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
                     ]
                 }
 
-        # 5. SI MENCIONA UNA MATERIA DIRECTA (por ejemplo tras la pregunta anterior)
-        # Ej: "python", "bases de datos", "redes"
+        # 5. SI MENCIONA UNA MATERIA DIRECTA
         if len(lower.split()) <= 3 and any(w in lower for w in ["python", "redes", "datos", "tesis", "código", "codigo", "sql", "java"]):
             subject = current_text.capitalize()
             return {
@@ -412,7 +432,7 @@ Responde ÚNICAMENTE un JSON válido:
 }}
 """
                 resp = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=self.active_model,
                     contents=prompt
                 )
                 clean_json = re.sub(r"^```(?:json)?\s*", "", resp.text.strip())
