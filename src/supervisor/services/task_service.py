@@ -126,5 +126,26 @@ class TaskService:
         return task_repository.toggle_task_status(task_id)
 
     @staticmethod
+    def set_task_status(task_id: int, status: str) -> bool:
+        return task_repository.set_task_status(task_id, status)
+
+    @staticmethod
     def delete_task(task_id: int) -> bool:
         return task_repository.delete_task(task_id)
+
+    @staticmethod
+    def get_tasks_by_month(year_month: str) -> List[Dict[str, Any]]:
+        tasks = task_repository.get_tasks_by_month(year_month)
+        return [asdict(t) for t in tasks]
+
+    @staticmethod
+    def get_monthly_summary(year_month: str) -> Dict[str, Any]:
+        return task_repository.get_monthly_summary(year_month)
+
+    @staticmethod
+    def get_overall_stats() -> Dict[str, Any]:
+        return task_repository.get_overall_stats()
+
+    @staticmethod
+    def get_data_version() -> str:
+        return task_repository.get_data_version()

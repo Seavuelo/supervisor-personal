@@ -1159,6 +1159,21 @@
       }
     }
 
+    let lastKnownDataVersion = "0";
+
+    function startBackgroundSync() {
+      setInterval(() => {
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_data_version === 'function') {
+          window.pywebview.api.get_data_version().then(currentVer => {
+            if (currentVer && currentVer !== lastKnownDataVersion) {
+              lastKnownDataVersion = currentVer;
+              fetchData();
+            }
+          }).catch(() => {});
+        }
+      }, 3000);
+    }
+
     window.addEventListener('pywebviewready', () => {
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.get_setting('show_weekly_calendar', 'true').then(v => {
@@ -1171,9 +1186,13 @@
           hideCompletedTasks = (v === 'true');
           updateHideCompletedUI();
         });
+        window.pywebview.api.get_data_version().then(ver => {
+          lastKnownDataVersion = ver || "0";
+        });
       }
       fetchData();
       checkOverdueTasks();
+      startBackgroundSync();
     });
 
     // Envío desde la entrada de texto rápida

@@ -63,6 +63,18 @@ class seeU_API:
     def delete_task(self, task_id):
         return self.task_service.delete_task(task_id)
 
+    def get_monthly_summary(self, month=None):
+        if not month:
+            from datetime import datetime
+            month = datetime.now().strftime("%Y-%m")
+        return self.task_service.get_monthly_summary(month)
+
+    def get_overall_stats(self):
+        return self.task_service.get_overall_stats()
+
+    def get_data_version(self):
+        return self.task_service.get_data_version()
+
     # --- Tareas Atrasadas de Días Anteriores ---
     def get_overdue_tasks(self):
         return self.task_service.get_overdue_tasks()

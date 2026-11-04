@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seeu"
+version = "1.0.0"
+description = "Supervisor personal de escritorio y asistente anti-sobrecarga cognitiva"
+authors = [{ name = "Seavuelo" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pywebview>=6.0.0",
+    "PyQt6>=6.8.0",
+    "PyQt6-WebEngine>=6.8.0",
+    "qtpy>=2.4.0",
+    "google-genai>=2.0.0",
+    "python-dotenv>=1.0.0"
+]
+
+[project.scripts]
+seeu = "supervisor.cli:main"
+seeu-gui = "supervisor.main:main"
+seeu-mcp = "supervisor.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

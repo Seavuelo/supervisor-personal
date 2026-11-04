@@ -21,20 +21,30 @@ Por eso construí seeU, concibiéndolo como un compañero silencioso y liviano q
 - Revisión directa de pendientes anteriores, con un mensaje sobrio que me consulta si movemos esas tareas para hoy o si las descartamos sin complicaciones.
 - Mini agente conversacional, integrado para guiarme si escribo algo vago como estudiar o agendar médico, calculando tiempos realistas o funcionando de manera totalmente autónoma si estoy sin conexión.
 - Hábitos diarios recurrentes, permitiendo registrar actividades como hacer ejercicio todos los días sin amarrarlas a una fecha única.
+- Conexión con agentes externos de Inteligencia Artificial mediante CLI y protocolo MCP, para que asistentes como Codex, Gemini o Claude puedan añadir tareas, crear planes de estudio o consultar mis estadísticas de ticks por meses.
 
 ## Cómo correrlo en Windows
 
-Para clonar y poner a andar seeU en una computadora con Windows, abro una terminal de PowerShell o CMD en la carpeta donde quiera el proyecto y ejecuto los siguientes pasos.
+Para poner a andar seeU en Windows de la manera más sencilla posible, preparé un instalador asistido y un lanzador directo que se encargan de todo sin pelear con rutas de módulos.
+
+Si es la primera vez que lo uso, simplemente hago doble clic sobre el archivo instalar_windows.bat y este script se encarga de crear el entorno virtual e instalar las librerías necesarias.
+
+Para abrir seeU en el día a día, solo hago doble clic en el archivo iniciar_seeU.bat o ejecuto el punto de entrada universal desde PowerShell.
 
 ```cmd
 cd supervisor-personal
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-python src\supervisor\main.py
+python run_seeu.py
 ```
 
-Al abrir el programa por primera vez, este creará su propia base de datos SQLite de forma automática en la carpeta data, guardando ahí todas las tareas de manera local y segura.
+Al abrir el programa, este genera su propia base de datos SQLite en la carpeta data, guardando ahí todas las tareas de manera local y privada.
+
+## Cómo compilar el ejecutable EXE para Windows
+
+Si quiero entregar el programa listo para que cualquiera lo use sin necesidad de tener Python instalado, puedo generar el archivo EXE de dos formas muy cómodas.
+
+En mi propio computador con Windows puedo hacer doble clic sobre compilar_exe.bat para que PyInstaller empaquete seeU.exe dentro de la carpeta dist.
+
+Además, dejé configurado un flujo automático de GitHub Actions que compila el ejecutable nativo en los servidores de GitHub cada vez que subo cambios, permitiendo descargar el archivo comprimido directamente desde la sección de acciones de mi repositorio.
 
 ## Cómo correrlo en Linux
 
@@ -45,10 +55,26 @@ cd supervisor-personal
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 src/supervisor/main.py
+python3 run_seeu.py
 ```
 
-## Configuración y uso de Inteligencia Artificial
+## Integración con agentes de Inteligencia Artificial
+
+seeU fue diseñado para entenderse de forma natural con agentes autónomos como Codex, Gemini o asistentes en terminal, permitiéndoles consultar el calendario o planificar semanas de estudio.
+
+Puedo pedirle a un agente que consulte mis métricas o que cree un plan completo ejecutando comandos limpios que entregan respuestas en texto o en formato JSON estructurado.
+
+```bash
+python -m supervisor.cli stats
+python -m supervisor.cli month
+python -m supervisor.cli plan "Preparar examen de redes" --steps "Lectura capitulo 1, Hacer resumen, 5 ejercicios"
+python -m supervisor.cli task add "Dentista manana" --date 2026-11-05 --time 15.00
+python -m supervisor.cli task tick 1
+```
+
+Si utilizo herramientas compatibles con el protocolo MCP como Claude Desktop o Cursor, seeU cuenta con su propio servidor integrado que se inicia ejecutando el subcomando mcp, permitiendo que la inteligencia artificial añada actividades o revise los ticks completados en tiempo real.
+
+## Configuración de Gemini
 
 seeU funciona de manera completa y autónoma sin necesidad de internet, gracias a su motor conversacional interno de reglas lógicas.
 

@@ -1,0 +1,45 @@
+name: Compilar seeU para Windows
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Compilar Ejecutable Windows (.exe)
+    runs-on: windows-latest
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Compilar seeU con PyInstaller
+        run: |
+          python build_windows_exe.py
+
+      - name: Empaquetar ejecutable y recursos
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\seeU\* -DestinationPath seeU-Windows-x64.zip
+
+      - name: Publicar artefacto de instalacion
+        uses: actions/upload-artifact@v4
+        with:
+          name: seeU-Windows-x64
+          path: seeU-Windows-x64.zip
+          retention-days: 30

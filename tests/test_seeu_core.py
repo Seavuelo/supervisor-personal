@@ -1,5 +1,6 @@
 import unittest
 import os
+import json
 import tempfile
 import sqlite3
 from datetime import datetime, date, timedelta
@@ -139,6 +140,65 @@ class TestSeeUCore(unittest.TestCase):
         finally:
             if desktop_file.exists():
                 desktop_file.unlink()
+
+    def test_monthly_summary_and_stats(self):
+        service = TaskService()
+        hoy = date.today().strftime("%Y-%m-%d")
+        mes_actual = date.today().strftime("%Y-%m")
+
+        # Crear 2 tareas pendientes y 1 completada
+        t1 = service.create_task(title="Tarea 1", scheduled_date=hoy)
+        t2 = service.create_task(title="Tarea 2", scheduled_date=hoy)
+        t3 = service.create_task(title="Tarea 3", scheduled_date=hoy)
+
+        # Completar t1
+        service.toggle_task(t1["id"])
+
+        summary = service.get_monthly_summary(mes_actual)
+        self.assertEqual(summary["year_month"], mes_actual)
+        self.assertEqual(summary["completed_ticks"], 1)
+        self.assertEqual(summary["pending_tasks"], 2)
+        self.assertEqual(summary["total_tasks"], 3)
+        self.assertGreater(len(summary["days"]), 27)
+
+        stats = service.get_overall_stats()
+        self.assertEqual(stats["completed_ticks"], 1)
+        self.assertEqual(stats["pending_tasks"], 2)
+
+    def test_mcp_server_tools_execution(self):
+        from supervisor.mcp_server import execute_tool
+        
+        # 1. Anadir tarea por MCP
+        res_raw = execute_tool("seeu_add_task", {
+            "title": "Estudiar grafos para el certamen",
+            "tag": "Estudio",
+            "is_priority": True
+        })
+        res = json.loads(res_raw)
+        self.assertEqual(res["status"], "success")
+        t_id = res["task"]["id"]
+        self.assertTrue(res["task"]["is_priority"])
+
+        # 2. Alternar tick por MCP
+        tick_raw = execute_tool("seeu_toggle_tick", {"task_id": t_id})
+        tick_res = json.loads(tick_raw)
+        self.assertEqual(tick_res["status"], "success")
+        self.assertEqual(tick_res["new_status"], "completada")
+
+        # 3. Crear plan de estudio con micro-pasos
+        plan_raw = execute_tool("seeu_create_plan", {
+            "title": "Preparar examen de algoritmos",
+            "steps": ["Repasar Dijkstra", "Resolver 3 ejercicios", "Descanso 5 min"]
+        })
+        plan_res = json.loads(plan_raw)
+        self.assertEqual(plan_res["status"], "success")
+        self.assertEqual(plan_res["plan"]["total_steps"], 3)
+
+        # 4. Obtener resumen mensual por MCP
+        month_raw = execute_tool("seeu_get_monthly_overview", {})
+        month_res = json.loads(month_raw)
+        self.assertIn("completed_ticks", month_res)
+        self.assertGreaterEqual(month_res["completed_ticks"], 1)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from supervisor.database.connection import get_connection
 from supervisor.models.goal import Goal
+from supervisor.repositories.task_repository import touch_data_version
 
 def save_goal(goal: Goal) -> int:
     connection = get_connection()
@@ -23,6 +24,7 @@ def save_goal(goal: Goal) -> int:
     connection.commit()
     goal_id = cursor.lastrowid
     connection.close()
+    touch_data_version()
     return goal_id
 
 def get_all_goals() -> List[Dict[str, Any]]:
@@ -85,6 +87,8 @@ def update_goal_status(goal_id: int, new_status: str) -> bool:
     connection.commit()
     affected = cursor.rowcount > 0
     connection.close()
+    if affected:
+        touch_data_version()
     return affected
 
 def delete_goal(goal_id: int) -> bool:
@@ -96,4 +100,6 @@ def delete_goal(goal_id: int) -> bool:
     connection.commit()
     affected = cursor.rowcount > 0
     connection.close()
+    if affected:
+        touch_data_version()
     return affected
