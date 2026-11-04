@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from supervisor.models.task import Task
 from supervisor.repositories import task_repository
@@ -17,6 +18,7 @@ class TaskService:
                 "task_type": t.task_type,
                 "tag": t.tag,
                 "goal_id": t.goal_id,
+                "recurrence": t.recurrence,
                 "created_at": t.created_at,
             }
             for t in tasks
@@ -31,6 +33,7 @@ class TaskService:
         task_type: str = "quick",
         tag: str = "Hoy",
         goal_id: Optional[int] = None,
+        recurrence: str = "none",
     ) -> Dict[str, Any]:
         task = Task(
             title=title.strip(),
@@ -40,6 +43,7 @@ class TaskService:
             task_type=task_type,
             tag=tag,
             goal_id=goal_id,
+            recurrence=recurrence,
         )
         task_id = task_repository.save_task(task)
         task.id = task_id
@@ -53,8 +57,55 @@ class TaskService:
             "task_type": task.task_type,
             "tag": task.tag,
             "goal_id": task.goal_id,
+            "recurrence": task.recurrence,
             "created_at": task.created_at,
         }
+
+    @staticmethod
+    def get_weekly_heatmap() -> List[Dict[str, Any]]:
+        """
+        Retorna la tira semanal de Lunes a Domingo con su conteo de tareas
+        y nivel de intensidad para el heatmap visual de seeU.
+        """
+        now = datetime.now()
+        start_of_week = now - timedelta(days=now.weekday())
+        day_chars = ["L", "M", "M", "J", "V", "S", "D"]
+        day_names = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+        dates = [(start_of_week + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        counts = task_repository.get_task_counts_per_date(dates)
+
+        result = []
+        for i in range(7):
+            d_date = dates[i]
+            d_dt = start_of_week + timedelta(days=i)
+            c = counts.get(d_date, 0)
+
+            # Nivel de intensidad:
+            # 0: 0 tareas (negro cristal)
+            # 1: 1 a 2 tareas (se aclara un poco)
+            # 2: 3 a 5 tareas (blanco/claro con texto oscuro)
+            # 3: 6 o más tareas (blanco sólido brillante con texto negro)
+            if c == 0:
+                intensity = 0
+            elif c <= 2:
+                intensity = 1
+            elif c <= 5:
+                intensity = 2
+            else:
+                intensity = 3
+
+            result.append({
+                "char": day_chars[i],
+                "name": day_names[i],
+                "date": d_date,
+                "day_num": d_dt.day,
+                "count": c,
+                "intensity": intensity,
+                "is_today": (d_date == now.strftime("%Y-%m-%d")),
+            })
+
+        return result
 
     @staticmethod
     def toggle_task(task_id: int) -> Optional[str]:

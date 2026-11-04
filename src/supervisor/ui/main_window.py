@@ -37,14 +37,18 @@ class seeU_API:
     def get_tasks(self):
         return self.task_service.get_all_tasks()
 
-    def create_task(self, title, tag="Hoy", scheduled_time=None, scheduled_date=None, task_type="quick", goal_id=None):
+    def get_weekly_heatmap(self):
+        return self.task_service.get_weekly_heatmap()
+
+    def create_task(self, title, tag="Hoy", scheduled_time=None, scheduled_date=None, task_type="quick", goal_id=None, recurrence="none"):
         return self.task_service.create_task(
             title=title,
             tag=tag,
             scheduled_time=scheduled_time,
             scheduled_date=scheduled_date,
             task_type=task_type,
-            goal_id=goal_id
+            goal_id=goal_id,
+            recurrence=recurrence
         )
 
     def toggle_task(self, task_id):
@@ -52,6 +56,15 @@ class seeU_API:
 
     def delete_task(self, task_id):
         return self.task_service.delete_task(task_id)
+
+    # --- Configuraciones y Preferencias ---
+    def get_setting(self, key, default=""):
+        val = settings_repository.get_setting(key)
+        return val if val is not None else default
+
+    def set_setting(self, key, value):
+        settings_repository.set_setting(key, value)
+        return True
 
     # --- Metas y Hábitos ---
     def get_goals(self):

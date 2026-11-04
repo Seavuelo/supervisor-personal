@@ -9,8 +9,9 @@ class Task:
     status: str = "pendiente"  # "pendiente" | "completada"
     scheduled_time: Optional[str] = None
     scheduled_date: Optional[str] = None
-    task_type: str = "quick"  # "quick" | "appointment" | "micro_step"
+    task_type: str = "quick"  # "quick" | "appointment" | "micro_step" | "daily"
     tag: str = "Hoy"
     goal_id: Optional[int] = None
+    recurrence: str = "none"  # "none" | "daily" | "weekly"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     id: Optional[int] = None

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from supervisor.database.connection import get_connection
 from supervisor.models.task import Task
 
@@ -8,8 +8,8 @@ def save_task(task: Task) -> int:
 
     cursor.execute(
         """
-        INSERT INTO tasks (title, description, status, scheduled_time, scheduled_date, task_type, tag, goal_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tasks (title, description, status, scheduled_time, scheduled_date, task_type, tag, goal_id, recurrence, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             task.title,
@@ -20,6 +20,7 @@ def save_task(task: Task) -> int:
             task.task_type,
             task.tag,
             task.goal_id,
+            task.recurrence,
             task.created_at,
         ),
     )
@@ -34,7 +35,7 @@ def get_all_tasks() -> List[Task]:
     cursor = connection.cursor()
 
     cursor.execute("""
-        SELECT id, title, description, status, scheduled_time, scheduled_date, task_type, tag, goal_id, created_at
+        SELECT id, title, description, status, scheduled_time, scheduled_date, task_type, tag, goal_id, recurrence, created_at
         FROM tasks
         ORDER BY 
             CASE status WHEN 'pendiente' THEN 0 ELSE 1 END,
@@ -56,10 +57,30 @@ def get_all_tasks() -> List[Task]:
                 task_type=row[6] or "quick",
                 tag=row[7] or "Hoy",
                 goal_id=row[8],
-                created_at=row[9] or "",
+                recurrence=row[9] or "none",
+                created_at=row[10] or "",
             )
         )
     return tasks
+
+def get_task_counts_per_date(dates: List[str]) -> Dict[str, int]:
+    """Retorna un diccionario {fecha_iso: cantidad_tareas} para las fechas dadas, incluyendo tareas recurrentes diarias."""
+    connection = get_connection()
+    cursor = connection.cursor()
+
+    counts = {d: 0 for d in dates}
+
+    # Contar tareas diarias generales (cuentan para todos los días de la semana)
+    cursor.execute("SELECT COUNT(*) FROM tasks WHERE recurrence = 'daily' AND status = 'pendiente'")
+    daily_count = cursor.fetchone()[0] or 0
+
+    for d in dates:
+        cursor.execute("SELECT COUNT(*) FROM tasks WHERE scheduled_date = ? AND recurrence != 'daily'", (d,))
+        specific_count = cursor.fetchone()[0] or 0
+        counts[d] = specific_count + daily_count
+
+    connection.close()
+    return counts
 
 def toggle_task_status(task_id: int) -> Optional[str]:
     connection = get_connection()

@@ -155,15 +155,17 @@ HISTORIAL DE LA CONVERSACIÓN RECIENTE:
 
 REGLAS DE COMPORTAMIENTO:
 1. CERO emojis. Tono sereno, directo y reconfortante. Sin marketing ni frases vacías.
-2. Si el usuario rechaza algo (ej: "no quiero estudiar", "quiero otras actividades", "otra cosa"):
+2. Si el usuario pide un hábito o tarea que se repite (ej: "hacer ejercicio todos los días", "tomar agua todos los días"):
+   - Asignar recurrence: "daily", task_type: "daily", tag: "Diaria", scheduled_date: null.
+3. Si el usuario rechaza algo (ej: "no quiero estudiar", "quiero otras actividades", "otra cosa"):
    - Cambia de rumbo con flexibilidad. Pregúntale qué tipo de actividades prefiere hoy (prácticas, organizar pendientes, descanso activo) y cuánto tiempo tiene.
-3. Si el usuario da un plazo o tiempo disponible (ej: "tengo 40 minutos", "1 hora"):
+4. Si el usuario da un plazo o tiempo disponible (ej: "tengo 40 minutos", "1 hora"):
    - Desglosa un plan realista y adaptable a ese tiempo exacto con pausas breves.
-4. Si el usuario propone algo vago (ej: "quiero estudiar"):
+5. Si el usuario propone algo vago (ej: "quiero estudiar"):
    - Pregúntale de forma natural qué materia o proyecto tiene en mente, o qué le genera más resistencia para empezar.
-5. Si es una cita o compromiso sin hora:
+6. Si es una cita o compromiso sin hora:
    - Pregúntale a qué hora está programada.
-6. Si la propuesta ya está clara o el usuario la aprobó:
+7. Si la propuesta ya está clara o el usuario la aprobó:
    - Devuelve la lista de tareas concretas listas para guardar en su Foco o Agenda.
 
 RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
@@ -177,7 +179,7 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
   "is_goal": true | false,
   "goal_title": "Título si es meta",
   "tasks": [
-    {{"title": "Paso 1 muy concreto", "tag": "20 min", "scheduled_time": null, "scheduled_date": null, "task_type": "micro_step" | "appointment" | "quick"}}
+    {{"title": "Paso 1 muy concreto", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick" | "daily" | "micro_step" | "appointment", "recurrence": "none" | "daily"}}
   ]
 }}
 """
@@ -220,7 +222,27 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         hour_match = re.search(r"a las (\d{1,2})", lower)
         detected_time = time_match.group(1) if time_match else (f"{int(hour_match.group(1)):02d}:00" if hour_match else None)
 
-        # 0. RESOLUCIÓN DE HORA TRAS PREGUNTA DE CITA PREVIA
+        # 0. RESOLUCIÓN DE TAREAS RECURRENTES O HÁBITOS DIARIOS
+        # Ej: "hacer ejercicio todos los días", "tomar agua todos los días", "leer 20 min diario"
+        if any(w in lower for w in ["todos los días", "todos los dias", "cada día", "cada dia", "diariamente", "diario", "hábito diario"]):
+            clean_title = re.sub(r"\b(todos los d[ií]as|cada d[ií]a|diariamente|diario|h[aá]bito diario)\b", "", current_text, flags=re.IGNORECASE).strip()
+            clean_title = clean_title.capitalize() if clean_title else current_text
+            return {
+                "action": "quick_task",
+                "message": f"He configurado '{clean_title}' como hábito general para todos los días.",
+                "tasks": [
+                    {
+                        "title": clean_title,
+                        "tag": "Diaria",
+                        "scheduled_time": detected_time,
+                        "scheduled_date": None,
+                        "task_type": "daily",
+                        "recurrence": "daily"
+                    }
+                ]
+            }
+
+        # 1. RESOLUCIÓN DE HORA TRAS PREGUNTA DE CITA PREVIA
         if detected_time and ("a qué hora" in last_assistant_msg or "agendemos" in last_assistant_msg):
             palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
             appt_title = next((m for m in reversed(prev_user_msgs) if any(w in m.lower() for w in palabras_cita)), "Cita médica")
