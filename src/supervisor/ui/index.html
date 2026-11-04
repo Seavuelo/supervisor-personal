@@ -19,9 +19,14 @@
 
     body.orb-mode {
       padding: 0 !important;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      margin: 0 !important;
+      background: transparent !important;
+      width: 42px !important;
+      height: 42px !important;
+      overflow: hidden !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
     }
 
     /* Superficie Liquid Glass (38% opacidad, 16px blur) */
@@ -117,19 +122,24 @@
       filter: grayscale(0.5);
     }
 
-    /* Micro-orbe flotante 32-44px */
+    /* Micro-orbe flotante 36px */
     .seeu-orb {
-      background: rgba(16, 19, 28, 0.55);
+      background: rgba(16, 19, 28, 0.65);
       backdrop-filter: blur(16px) saturate(180%);
       -webkit-backdrop-filter: blur(16px) saturate(180%);
       box-shadow: 
-        0 8px 24px rgba(0, 0, 0, 0.65),
+        0 8px 24px rgba(0, 0, 0, 0.7),
         inset 0 1px 1px 0 rgba(255, 255, 255, 0.4),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-      border: 1px solid rgba(255, 255, 255, 0.28);
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      width: 36px;
+      height: 36px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
       transition: transform 0.15s ease;
-      width: 34px;
-      height: 34px;
     }
 
     .seeu-orb:hover {
@@ -205,26 +215,26 @@
       </div>
     </div>
 
-    <!-- ENTRADA RÁPIDA / PROMPT DEL AGENTE (Común para Foco, Agenda y Metas) -->
+    <!-- ENTRADA RÁPIDA / PROMPT DEL AGENTE -->
     <div id="quick-input-bar" class="mt-3 no-drag">
       <form id="capture-form" class="relative flex items-center">
         <input 
           id="task-input" 
           type="text" 
-          placeholder="Escribe una tarea, cita o meta de estudio..."
+          placeholder="Escribe rápido lo que tienes en mente..."
           class="glass-input w-full rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-300 focus:outline-none transition pr-20"
         />
         <button 
           type="submit" 
           class="absolute right-1.5 px-3 py-1 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 active:scale-95 transition shadow-sm"
         >
-          Guardar
+          Anotar
         </button>
       </form>
     </div>
 
-    <!-- PANEL DEL ASISTENTE AGENTE (Preguntas interactivas y Desglose) -->
-    <div id="ai-assistant-box" class="hidden mt-2.5 p-3 rounded-2xl bg-black/45 border border-white/[0.18] backdrop-blur-md text-xs no-drag">
+    <!-- PANEL DEL ASISTENTE AGENTE (Preguntas interactivas, botones y campo de texto libre) -->
+    <div id="ai-assistant-box" class="hidden mt-2.5 p-3 rounded-2xl bg-black/55 border border-white/[0.22] backdrop-blur-xl text-xs no-drag shadow-lg">
       <div id="ai-content"></div>
     </div>
 
@@ -253,7 +263,7 @@
       <div id="view-agenda" class="hidden flex-1 flex flex-col min-h-0">
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text">
-            <span>Compromisos, citas y entregas programadas</span>
+            <span>Compromisos, citas y entregas</span>
           </div>
           <span id="agenda-counter" class="text-[10px] font-mono text-neutral-300">0 citas</span>
         </div>
@@ -267,14 +277,14 @@
       <div id="view-goals" class="hidden flex-1 flex flex-col min-h-0">
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text">
-            <span>Proyectos y objetivos con micro-pasos</span>
+            <span>Proyectos y objetivos desglosados</span>
           </div>
           <button onclick="showCreateGoalModal()" class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition readable-text">
             Nueva Meta
           </button>
         </div>
 
-        <!-- Formulario inline para nueva meta (oculto por defecto) -->
+        <!-- Formulario inline para nueva meta -->
         <div id="new-goal-box" class="hidden mb-2.5 p-3 rounded-2xl bg-black/40 border border-white/[0.16] space-y-2">
           <input id="goal-title-input" type="text" placeholder="Título de la meta (ej: Estudiar Python para Tesis)..." class="glass-input w-full rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-300 focus:outline-none" />
           <div class="flex items-center justify-between pt-1">
@@ -328,7 +338,7 @@
               </button>
             </div>
             <div class="text-[10px] text-neutral-400 leading-normal mt-1">
-              Gemini 2.5 Flash interpreta intenciones y desglosa tareas complejas. Tu clave se almacena exclusivamente en tu SQLite local.
+              Gemini 2.5 Flash interpreta intenciones y te guía activamente al anotar. Tu clave se almacena exclusivamente en tu base de datos local SQLite.
             </div>
             <div class="flex items-center gap-2 pt-1.5">
               <button 
@@ -352,7 +362,7 @@
           <!-- Memoria del orbe -->
           <div class="p-3 rounded-2xl bg-white/[0.05] border border-white/[0.12] text-[11px] text-neutral-300 space-y-1">
             <div class="font-medium text-white">Memoria de Posición y Animación</div>
-            <div>El orbe recuerda automáticamente las coordenadas exactas de pantalla donde lo situaste. Al minimizar y restaurar, una transición suave lo lleva a su lugar.</div>
+            <div>El orbe recuerda automáticamente la ubicación exacta de pantalla donde lo situaste. Al minimizar y restaurar, un deslizamiento suave lo devuelve a su lugar.</div>
           </div>
         </div>
 
@@ -376,10 +386,10 @@
 
   </div>
 
-  <!-- VISTA MICRO-ORBE MINIMIZADO (34px) -->
+  <!-- VISTA MICRO-ORBE MINIMIZADO (36px centrado y sin marcos) -->
   <div 
     id="minimized-orb" 
-    class="seeu-orb hidden fixed inset-0 m-auto rounded-full cursor-pointer flex flex-col items-center justify-center z-50 group"
+    class="seeu-orb hidden"
     title="seeU: Clic para abrir, arrastra para mover"
   >
     <div class="relative flex items-center justify-center pointer-events-none">
@@ -388,7 +398,7 @@
         <circle cx="12" cy="11.5" r="2.5" fill="currentColor"></circle>
         <path d="M3 11c3-3.8 6.5-5.5 9-5.5s6 1.7 9 5.5" stroke-width="1.4" opacity="0.45"></path>
       </svg>
-      <span id="orb-count" class="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-white text-neutral-950 text-[8px] font-bold font-mono flex items-center justify-center shadow">
+      <span id="orb-count" class="absolute -top-2 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-white text-neutral-950 text-[8px] font-bold font-mono flex items-center justify-center shadow">
         0
       </span>
     </div>
@@ -398,6 +408,7 @@
     let currentView = 'focus';
     let allTasks = [];
     let allGoals = [];
+    let activeAIContext = null;
 
     // Fecha en español
     const now = new Date();
@@ -477,13 +488,12 @@
       const container = document.getElementById('focus-list');
       container.innerHTML = '';
 
-      // Tareas que no son de agenda lejana ni pasos de metas anidadas
       const focusTasks = allTasks.filter(t => !t.goal_id);
 
       if (focusTasks.length === 0) {
         container.innerHTML = `
           <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
-            Sin tareas en foco.<br/><span class="text-[11px] text-neutral-400">Escribe algo arriba para registrar.</span>
+            Sin tareas en foco.<br/><span class="text-[11px] text-neutral-400">Escribe algo arriba y te ayudo a organizarlo.</span>
           </div>
         `;
         return;
@@ -520,7 +530,7 @@
       if (agendaTasks.length === 0) {
         container.innerHTML = `
           <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
-            No hay compromisos agendados.<br/><span class="text-[11px] text-neutral-400">Escribe algo como "médico el martes a las 12" para agendar.</span>
+            No hay citas agendadas.<br/><span class="text-[11px] text-neutral-400">Escribe algo como "mañana tengo doctor" para agendar.</span>
           </div>
         `;
         return;
@@ -558,7 +568,7 @@
       if (allGoals.length === 0) {
         container.innerHTML = `
           <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
-            No tienes metas creadas.<br/><span class="text-[11px] text-neutral-400">Pulsa 'Nueva Meta' o escribe 'estudiar python' para desglosar pasos.</span>
+            No tienes metas creadas.<br/><span class="text-[11px] text-neutral-400">Escribe 'quiero estudiar' arriba para desglosarlo con el agente.</span>
           </div>
         `;
         return;
@@ -700,21 +710,61 @@
       }
     });
 
+    // Manejo de la respuesta interactiva del Agente
     function handleAIResult(originalText, result) {
       const aiBox = document.getElementById('ai-assistant-box');
       const aiContent = document.getElementById('ai-content');
 
       if (result.action === 'question') {
+        activeAIContext = {
+          original_text: originalText,
+          context_type: result.context_type || 'general',
+          extra_data: { target_date: result.target_date || null }
+        };
+
         aiBox.classList.remove('hidden');
+
         let buttonsHtml = '';
-        (result.options || ['10:00', '12:00', '16:30', 'Sin hora fija']).forEach(opt => {
-          buttonsHtml += `<button onclick="confirmScheduledTask('${originalText}', '${opt}', '${result.scheduled_date || ''}')" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${opt}</button>`;
+        (result.options || []).forEach(opt => {
+          buttonsHtml += `<button onclick="confirmOptionAnswer('${opt}')" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${opt}</button>`;
         });
+
+        const customInputPlaceholder = result.custom_placeholder || 'O escribe tu respuesta aquí...';
+
         aiContent.innerHTML = `
-          <div class="text-white font-semibold readable-text">seeU &bull; Aclaración de Agenda:</div>
-          <div class="text-neutral-200 mt-1 readable-text">${result.question || '¿A qué hora o fecha la agendamos?'}</div>
-          <div class="flex flex-wrap gap-1.5 mt-2.5">${buttonsHtml}</div>
+          <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
+            <span class="text-white font-semibold readable-text">seeU &bull; Asistente</span>
+            <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
+          </div>
+          <div class="text-neutral-200 mt-1.5 readable-text font-medium">${result.question || '¿Puedes especificar más detalles?'}</div>
+          
+          <!-- Botones de opción rápida -->
+          <div class="flex flex-wrap gap-1.5 mt-2">${buttonsHtml}</div>
+
+          <!-- Campo de texto libre para cuando las opciones no sirvan -->
+          <div class="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-white/[0.08]">
+            <input 
+              id="ai-free-input" 
+              type="text" 
+              placeholder="${customInputPlaceholder}" 
+              class="glass-input flex-1 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-400 focus:outline-none transition"
+              onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitFreeAnswer(); }"
+            />
+            <button 
+              type="button" 
+              onclick="submitFreeAnswer()" 
+              class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition shadow"
+            >
+              Confirmar
+            </button>
+          </div>
         `;
+
+        setTimeout(() => {
+          const fi = document.getElementById('ai-free-input');
+          if (fi) fi.focus();
+        }, 80);
+
       } else if (result.action === 'micro_steps') {
         aiBox.classList.remove('hidden');
         let stepsHtml = '';
@@ -731,9 +781,12 @@
           tasks: result.tasks
         };
         aiContent.innerHTML = `
-          <div class="text-white font-semibold readable-text">Desglose propuesto para reducir sobrecarga:</div>
+          <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
+            <span class="text-white font-semibold readable-text">Desglose de Pasos Sugerido:</span>
+            <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
+          </div>
           <div class="space-y-1.5 my-2.5 text-neutral-100 text-[11px]">${stepsHtml}</div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 pt-1">
             <button onclick="confirmMicroStepsAsGoal()" class="flex-1 px-3 py-1.5 bg-white text-neutral-950 font-semibold rounded-xl hover:bg-neutral-100 text-[11px] transition shadow-sm">
               Crear Meta con estos pasos
             </button>
@@ -746,22 +799,51 @@
         const t = (result.tasks && result.tasks[0]) || { title: originalText, tag: 'Agenda' };
         createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, 'appointment');
         document.getElementById('task-input').value = '';
-        aiBox.classList.add('hidden');
+        dismissAIBound();
         switchView('agenda');
       } else {
         const t = (result.tasks && result.tasks[0]) || { title: originalText, tag: 'Hoy' };
         createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, t.task_type || 'quick');
         document.getElementById('task-input').value = '';
-        aiBox.classList.add('hidden');
+        dismissAIBound();
         if (currentView !== 'focus') switchView('focus');
       }
     }
 
-    function confirmScheduledTask(title, timeOrDate, scheduledDate) {
-      createTaskInDB(title, timeOrDate, timeOrDate, scheduledDate || null, 'appointment');
+    function confirmOptionAnswer(optionText) {
+      if (!activeAIContext || !window.pywebview || !window.pywebview.api) return;
+
+      window.pywebview.api.process_ai_followup(
+        activeAIContext.original_text,
+        optionText,
+        activeAIContext.context_type,
+        activeAIContext.extra_data
+      ).then(res => {
+        handleAIResult(activeAIContext.original_text, res);
+      });
+    }
+
+    function submitFreeAnswer() {
+      const input = document.getElementById('ai-free-input');
+      if (!input) return;
+      const val = input.value.trim();
+      if (!val) return;
+
+      if (!activeAIContext || !window.pywebview || !window.pywebview.api) return;
+
+      window.pywebview.api.process_ai_followup(
+        activeAIContext.original_text,
+        val,
+        activeAIContext.context_type,
+        activeAIContext.extra_data
+      ).then(res => {
+        handleAIResult(activeAIContext.original_text, res);
+      });
+    }
+
+    function dismissAIBound() {
       document.getElementById('ai-assistant-box').classList.add('hidden');
-      document.getElementById('task-input').value = '';
-      switchView('agenda');
+      activeAIContext = null;
     }
 
     function confirmMicroStepsAsGoal() {
@@ -771,7 +853,7 @@
             return window.pywebview.api.add_step_to_goal(newG.id, st.title, st.tag || '20 min');
           });
           Promise.all(promises).then(() => {
-            document.getElementById('ai-assistant-box').classList.add('hidden');
+            dismissAIBound();
             document.getElementById('task-input').value = '';
             fetchData();
             switchView('goals');
@@ -786,7 +868,7 @@
           createTaskInDB(st.title, st.tag || 'Paso', null, null, 'micro_step');
         });
       }
-      document.getElementById('ai-assistant-box').classList.add('hidden');
+      dismissAIBound();
       document.getElementById('task-input').value = '';
       switchView('focus');
     }
@@ -801,15 +883,18 @@
 
       aiContent.innerHTML = `
         <div class="text-white font-semibold readable-text">Analizando tu carga mental...</div>
-        <div class="text-neutral-300 mt-1 readable-text">El agente está seleccionando solo 2 tareas esenciales para hoy para calmar la ansiedad.</div>
+        <div class="text-neutral-300 mt-1 readable-text">El agente está seleccionando solo 2 tareas esenciales para hoy para calmar la sobrecarga.</div>
       `;
 
       window.pywebview.api.triage_focus().then(res => {
         aiContent.innerHTML = `
-          <div class="text-white font-semibold readable-text">Despejar Foco:</div>
-          <div class="text-neutral-200 mt-1 readable-text leading-relaxed">${res.message}</div>
+          <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
+            <span class="text-white font-semibold readable-text">Despejar Foco:</span>
+            <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
+          </div>
+          <div class="text-neutral-200 mt-1.5 readable-text leading-relaxed">${res.message}</div>
           <div class="mt-2.5 flex justify-end">
-            <button onclick="document.getElementById('ai-assistant-box').classList.add('hidden')" class="px-3 py-1 bg-white text-neutral-950 rounded-lg text-xs font-semibold hover:bg-neutral-100 transition shadow">
+            <button onclick="dismissAIBound()" class="px-3 py-1 bg-white text-neutral-950 rounded-lg text-xs font-semibold hover:bg-neutral-100 transition shadow">
               Comenzar con calma
             </button>
           </div>
@@ -923,7 +1008,7 @@
       }
     }
 
-    // Control de Micro-Orbe y Animación
+    // Control de Micro-Orbe y Redimensionamiento
     function minimizeToOrb() {
       document.body.classList.add('orb-mode');
       document.getElementById('full-window').classList.add('hidden');
@@ -942,7 +1027,7 @@
       }
     }
 
-    // Umbral de Arrastre vs Clic del Orbe
+    // Umbral estricto de Arrastre vs Clic del Orbe
     let orbMouseDownTime = 0;
     let orbStartX = 0;
     let orbStartY = 0;

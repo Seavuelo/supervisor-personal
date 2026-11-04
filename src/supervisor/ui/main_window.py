@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from pathlib import Path
 import webview
 from supervisor.services.task_service import TaskService
@@ -26,13 +28,12 @@ class seeU_API:
 
         self.full_width = 430
         self.full_height = 620
-        self.orb_size = 44
-        self._anim = None
+        self.orb_size = 42
 
     def set_window(self, window):
         self.window = window
 
-    # --- Métodos de Tareas ---
+    # --- Tareas ---
     def get_tasks(self):
         return self.task_service.get_all_tasks()
 
@@ -52,7 +53,7 @@ class seeU_API:
     def delete_task(self, task_id):
         return self.task_service.delete_task(task_id)
 
-    # --- Métodos de Metas y Hábitos ---
+    # --- Metas y Hábitos ---
     def get_goals(self):
         return self.goal_service.get_all_goals()
 
@@ -65,9 +66,12 @@ class seeU_API:
     def delete_goal(self, goal_id):
         return self.goal_service.delete_goal(goal_id)
 
-    # --- Métodos de Inteligencia Artificial ---
+    # --- Agente Inteligente seeU ---
     def process_ai(self, text):
         return self.ai_service.process_input(text)
+
+    def process_ai_followup(self, original_text, user_answer, context_type, extra_data=None):
+        return self.ai_service.process_followup(original_text, user_answer, context_type, extra_data)
 
     def triage_focus(self):
         tasks = self.task_service.get_all_tasks()
@@ -83,91 +87,50 @@ class seeU_API:
     def test_connection(self):
         return self.ai_service.test_connection()
 
-    # --- Ventana y Animación Qt ---
-    def _get_qt_window(self):
-        try:
-            from webview.platforms.qt import BrowserView
-            return BrowserView.instances.get(self.window.uid)
-        except Exception:
-            return None
-
+    # --- Geometría y Control de Ventana ---
     def minimize_to_orb(self):
         if not self.window:
             return
 
-        # Recordar dónde estaba la ventana antes de minimizar
+        # Guardar coordenadas de la ventana previa
         self.window_x = self.window.x
         self.window_y = self.window.y
         settings_repository.set_setting("window_x", self.window_x)
         settings_repository.set_setting("window_y", self.window_y)
 
-        q_win = self._get_qt_window()
-        if q_win:
-            try:
-                from PyQt6.QtCore import QPropertyAnimation, QRect, QEasingCurve
-                q_win.setMinimumSize(32, 32)
-                q_win.setMaximumSize(16777215, 16777215)
-
-                start_rect = q_win.geometry()
-                end_rect = QRect(self.orb_x, self.orb_y, self.orb_size, self.orb_size)
-
-                self._anim = QPropertyAnimation(q_win, b"geometry")
-                self._anim.setDuration(220)
-                self._anim.setStartValue(start_rect)
-                self._anim.setEndValue(end_rect)
-                self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-                def on_finish():
-                    if self.window:
-                        self.window.resize(self.orb_size, self.orb_size)
-                        self.window.move(self.orb_x, self.orb_y)
-
-                self._anim.finished.connect(on_finish)
-                self._anim.start()
-                return
-            except Exception as e:
-                print(f"[seeU] Animación Qt fallback: {e}")
-
+        # 1. Redimensionar inmediatamente a 42x42 (evita la caja grande difusa)
         self.window.resize(self.orb_size, self.orb_size)
-        self.window.move(self.orb_x, self.orb_y)
+
+        # 2. Desplazamiento suave hacia la posición guardada del orbe
+        start_x, start_y = self.window_x, self.window_y
+        target_x, target_y = self.orb_x, self.orb_y
+
+        def glide_to_orb():
+            steps = 7
+            for i in range(1, steps + 1):
+                t = i / steps
+                factor = 1.0 - (1.0 - t) ** 3
+                cx = int(start_x + (target_x - start_x) * factor)
+                cy = int(start_y + (target_y - start_y) * factor)
+                if self.window:
+                    self.window.move(cx, cy)
+                time.sleep(0.016)
+            if self.window:
+                self.window.move(target_x, target_y)
+
+        threading.Thread(target=glide_to_orb, daemon=True).start()
 
     def restore_window(self):
         if not self.window:
             return
 
-        # Recordar dónde estaba el orbe antes de restaurar
+        # Guardar coordenadas actuales del orbe
         self.orb_x = self.window.x
         self.orb_y = self.window.y
         settings_repository.set_setting("orb_x", self.orb_x)
         settings_repository.set_setting("orb_y", self.orb_y)
 
-        q_win = self._get_qt_window()
-        if q_win:
-            try:
-                from PyQt6.QtCore import QPropertyAnimation, QRect, QEasingCurve
-                q_win.setMinimumSize(32, 32)
-                q_win.setMaximumSize(16777215, 16777215)
-
-                start_rect = q_win.geometry()
-                end_rect = QRect(self.window_x, self.window_y, self.full_width, self.full_height)
-
-                self._anim = QPropertyAnimation(q_win, b"geometry")
-                self._anim.setDuration(220)
-                self._anim.setStartValue(start_rect)
-                self._anim.setEndValue(end_rect)
-                self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-
-                def on_finish():
-                    if self.window:
-                        self.window.resize(self.full_width, self.full_height)
-                        self.window.move(self.window_x, self.window_y)
-
-                self._anim.finished.connect(on_finish)
-                self._anim.start()
-                return
-            except Exception as e:
-                print(f"[seeU] Animación Qt fallback: {e}")
-
+        # Redimensionar a ventana completa y posicionar
         self.window.resize(self.full_width, self.full_height)
         self.window.move(self.window_x, self.window_y)
 
@@ -193,7 +156,7 @@ def start_ui():
         js_api=api,
         width=api.full_width,
         height=api.full_height,
-        min_size=(40, 40),
+        min_size=(36, 36),
         x=api.window_x,
         y=api.window_y,
         resizable=True,
