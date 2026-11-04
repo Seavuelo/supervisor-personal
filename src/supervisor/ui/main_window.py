@@ -41,7 +41,7 @@ class seeU_API:
 
         self.full_width = 430
         self.full_height = 620
-        self.orb_size = 42
+        self.orb_size = 44
 
     def set_window(self, window):
         self.window = window
@@ -223,61 +223,83 @@ X-GNOME-Autostart-enabled=true
     def minimize_to_tray(self):
         if not self.window:
             return
-        self.window_x = self.window.x
-        self.window_y = self.window.y
-        settings_repository.set_setting("window_x", self.window_x)
-        settings_repository.set_setting("window_y", self.window_y)
 
-        def _hide():
-            from webview.platforms.qt import BrowserView
-            q_win = BrowserView.instances.get(self.window.uid)
-            if q_win:
-                q_win.hide()
-        _run_in_gui(_hide)
+        def _do_hide():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win:
+                    self.window_x = q_win.x()
+                    self.window_y = q_win.y()
+                    settings_repository.set_setting("window_x", self.window_x)
+                    settings_repository.set_setting("window_y", self.window_y)
+                    q_win.hide()
+            except Exception as e:
+                print(f"[seeU] Error en minimize_to_tray: {e}")
+
+        _run_in_gui(_do_hide)
 
     def minimize_to_orb(self):
         if not self.window:
             return
 
-        self.window_x = self.window.x
-        self.window_y = self.window.y
-        settings_repository.set_setting("window_x", self.window_x)
-        settings_repository.set_setting("window_y", self.window_y)
+        def _do_minimize():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win:
+                    self.window_x = q_win.x()
+                    self.window_y = q_win.y()
+                    settings_repository.set_setting("window_x", self.window_x)
+                    settings_repository.set_setting("window_y", self.window_y)
 
-        def _show_orb():
-            from webview.platforms.qt import BrowserView
-            q_win = BrowserView.instances.get(self.window.uid)
-            if q_win:
-                if q_win.isHidden():
-                    q_win.show()
-                q_win.resize(self.orb_size, self.orb_size)
-                q_win.move(self.orb_x, self.orb_y)
-        _run_in_gui(_show_orb)
-        self.window.resize(self.orb_size, self.orb_size)
-        self.window.move(self.orb_x, self.orb_y)
+                    if q_win.isHidden():
+                        q_win.show()
+                    q_win.setGeometry(self.orb_x, self.orb_y, self.orb_size, self.orb_size)
+                    q_win.raise_()
+            except Exception as e:
+                print(f"[seeU] Error en minimize_to_orb: {e}")
+
+        _run_in_gui(_do_minimize)
 
     def restore_window(self):
         if not self.window:
             return
 
-        self.orb_x = self.window.x
-        self.orb_y = self.window.y
-        settings_repository.set_setting("orb_x", self.orb_x)
-        settings_repository.set_setting("orb_y", self.orb_y)
+        def _do_restore():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win:
+                    self.orb_x = q_win.x()
+                    self.orb_y = q_win.y()
+                    settings_repository.set_setting("orb_x", self.orb_x)
+                    settings_repository.set_setting("orb_y", self.orb_y)
 
-        def _show_window():
-            from webview.platforms.qt import BrowserView
-            q_win = BrowserView.instances.get(self.window.uid)
-            if q_win:
-                if q_win.isHidden():
-                    q_win.show()
-                q_win.resize(self.full_width, self.full_height)
-                q_win.move(self.window_x, self.window_y)
-                q_win.raise_()
-                q_win.activateWindow()
-        _run_in_gui(_show_window)
-        self.window.resize(self.full_width, self.full_height)
-        self.window.move(self.window_x, self.window_y)
+                    if q_win.isHidden():
+                        q_win.show()
+                    q_win.setGeometry(self.window_x, self.window_y, self.full_width, self.full_height)
+                    q_win.raise_()
+                    q_win.activateWindow()
+            except Exception as e:
+                print(f"[seeU] Error en restore_window: {e}")
+
+        _run_in_gui(_do_restore)
+
+    def move_orb_by(self, dx, dy):
+        def _do_move():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win:
+                    new_x = q_win.x() + int(dx)
+                    new_y = q_win.y() + int(dy)
+                    q_win.move(new_x, new_y)
+                    self.orb_x = new_x
+                    self.orb_y = new_y
+            except Exception:
+                pass
+        _run_in_gui(_do_move)
 
     def save_orb_position(self, x, y):
         self.orb_x = int(x)
@@ -320,9 +342,6 @@ def _setup_system_tray_and_tool_window(window, api):
             icon_file = Path(__file__).resolve().parent / "assets" / "icon.png"
 
             if q_win:
-                # Ocultar de la barra de tareas principal (tint2 / taskbar tradicional)
-                q_win.setWindowFlag(QtCore.Qt.WindowType.Tool, True)
-
                 # Garantizar fondo transparente real por pixel para que bordes y orbe no tengan cuadro
                 q_win.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
                 q_win.setStyleSheet("background: transparent;")
@@ -413,12 +432,12 @@ def start_ui():
         js_api=api,
         width=api.full_width,
         height=api.full_height,
-        min_size=(36, 36),
+        min_size=(44, 44),
         x=api.window_x,
         y=api.window_y,
         resizable=True,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
         transparent=True,
         on_top=True,
         background_color='#000000'

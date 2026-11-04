@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 from supervisor.repositories import settings_repository
 
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.4"
 GITHUB_REPO = "Seavuelo/supervisor-personal"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
