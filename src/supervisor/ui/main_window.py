@@ -1,8 +1,10 @@
 import os
+import sys
 import threading
 import time
 from pathlib import Path
 import webview
+from PyQt6 import QtCore
 from supervisor.services.task_service import TaskService
 from supervisor.services.goal_service import GoalService
 from supervisor.services.ai_service import AIService
@@ -33,14 +35,14 @@ class seeU_API:
     def set_window(self, window):
         self.window = window
 
-    # --- Tareas ---
+    # --- Tareas y Prioridades ---
     def get_tasks(self):
         return self.task_service.get_all_tasks()
 
     def get_weekly_heatmap(self):
         return self.task_service.get_weekly_heatmap()
 
-    def create_task(self, title, tag="Hoy", scheduled_time=None, scheduled_date=None, task_type="quick", goal_id=None, recurrence="none"):
+    def create_task(self, title, tag="Hoy", scheduled_time=None, scheduled_date=None, task_type="quick", goal_id=None, recurrence="none", is_priority=False):
         return self.task_service.create_task(
             title=title,
             tag=tag,
@@ -48,23 +50,28 @@ class seeU_API:
             scheduled_date=scheduled_date,
             task_type=task_type,
             goal_id=goal_id,
-            recurrence=recurrence
+            recurrence=recurrence,
+            is_priority=is_priority
         )
 
     def toggle_task(self, task_id):
         return self.task_service.toggle_task(task_id)
 
+    def toggle_priority(self, task_id):
+        return self.task_service.toggle_priority(task_id)
+
     def delete_task(self, task_id):
         return self.task_service.delete_task(task_id)
 
-    # --- Configuraciones y Preferencias ---
-    def get_setting(self, key, default=""):
-        val = settings_repository.get_setting(key)
-        return val if val is not None else default
+    # --- Tareas Atrasadas de Días Anteriores ---
+    def get_overdue_tasks(self):
+        return self.task_service.get_overdue_tasks()
 
-    def set_setting(self, key, value):
-        settings_repository.set_setting(key, value)
-        return True
+    def postpone_all_overdue(self):
+        return self.task_service.postpone_all_overdue()
+
+    def dismiss_all_overdue(self):
+        return self.task_service.dismiss_all_overdue()
 
     # --- Metas y Hábitos ---
     def get_goals(self):
@@ -83,9 +90,6 @@ class seeU_API:
     def process_ai(self, text):
         return self.ai_service.process_input(text)
 
-    def process_ai_followup(self, original_text, user_answer, context_type, extra_data=None):
-        return self.ai_service.process_followup(original_text, user_answer, context_type, extra_data)
-
     def triage_focus(self):
         tasks = self.task_service.get_all_tasks()
         pending = [t for t in tasks if t.get("status") == "pendiente"]
@@ -100,6 +104,45 @@ class seeU_API:
     def test_connection(self):
         return self.ai_service.test_connection()
 
+    # --- Configuraciones y Autostart ---
+    def get_setting(self, key, default=""):
+        val = settings_repository.get_setting(key)
+        return val if val is not None else default
+
+    def set_setting(self, key, value):
+        settings_repository.set_setting(key, value)
+        return True
+
+    def get_autostart_status(self):
+        desktop_file = Path.home() / ".config" / "autostart" / "seeU.desktop"
+        return desktop_file.exists()
+
+    def set_autostart(self, enable):
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "seeU.desktop"
+
+        if enable:
+            autostart_dir.mkdir(parents=True, exist_ok=True)
+            python_bin = sys.executable
+            main_script = Path(__file__).resolve().parent.parent / "main.py"
+            content = f"""[Desktop Entry]
+Type=Application
+Name=seeU
+Comment=Supervisor personal de tareas y agenda
+Exec={python_bin} {main_script}
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+"""
+            desktop_file.write_text(content, encoding="utf-8")
+            settings_repository.set_setting("autostart", "true")
+            return True
+        else:
+            if desktop_file.exists():
+                desktop_file.unlink()
+            settings_repository.set_setting("autostart", "false")
+            return False
+
     def open_external_url(self, url):
         import webbrowser
         webbrowser.open(url)
@@ -109,16 +152,15 @@ class seeU_API:
         if not self.window:
             return
 
-        # Guardar coordenadas de la ventana previa
         self.window_x = self.window.x
         self.window_y = self.window.y
         settings_repository.set_setting("window_x", self.window_x)
         settings_repository.set_setting("window_y", self.window_y)
 
-        # 1. Redimensionar inmediatamente a 42x42 (evita la caja grande difusa)
+        # Redimensionar a micro-orbe
         self.window.resize(self.orb_size, self.orb_size)
 
-        # 2. Desplazamiento suave hacia la posición guardada del orbe
+        # Desplazamiento suave hacia la posición del orbe
         start_x, start_y = self.window_x, self.window_y
         target_x, target_y = self.orb_x, self.orb_y
 
@@ -141,15 +183,19 @@ class seeU_API:
         if not self.window:
             return
 
-        # Guardar coordenadas actuales del orbe
         self.orb_x = self.window.x
         self.orb_y = self.window.y
         settings_repository.set_setting("orb_x", self.orb_x)
         settings_repository.set_setting("orb_y", self.orb_y)
 
-        # Redimensionar a ventana completa y posicionar
         self.window.resize(self.full_width, self.full_height)
         self.window.move(self.window_x, self.window_y)
+
+        # Al restaurar, forzar al frontend a ubicarse en el día actual
+        try:
+            self.window.evaluate_js("if(typeof resetToToday === 'function') resetToToday();")
+        except Exception:
+            pass
 
     def save_orb_position(self, x, y):
         self.orb_x = int(x)
@@ -160,6 +206,80 @@ class seeU_API:
     def close_app(self):
         if self.window:
             self.window.destroy()
+
+class _QtInvoker(QtCore.QObject):
+    def customEvent(self, event):
+        if hasattr(event, 'fn') and callable(event.fn):
+            event.fn()
+
+class _QtFnEvent(QtCore.QEvent):
+    TYPE = QtCore.QEvent.Type(QtCore.QEvent.registerEventType())
+    def __init__(self, fn):
+        super().__init__(self.TYPE)
+        self.fn = fn
+
+_qt_invoker = _QtInvoker()
+
+def _run_in_gui(fn):
+    QtCore.QCoreApplication.postEvent(_qt_invoker, _QtFnEvent(fn))
+
+def _setup_system_tray_and_tool_window(window, api):
+    """Configura el icono en la bandeja del sistema y remueve la app de la barra de tareas tradicional."""
+    def _apply_in_gui():
+        try:
+            from PyQt6 import QtCore
+            from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+            from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
+            from webview.platforms.qt import BrowserView
+
+            q_win = BrowserView.instances.get(window.uid)
+            q_app = QApplication.instance()
+
+            if q_win:
+                # Ocultar de la barra de tareas principal (tint2 / taskbar tradicional)
+                q_win.setWindowFlag(QtCore.Qt.WindowType.Tool, True)
+                q_win.show()
+
+            if q_app and QSystemTrayIcon.isSystemTrayAvailable():
+                # Crear icono vectorizado de seeU para la bandeja
+                pix = QPixmap(24, 24)
+                pix.fill(QtCore.Qt.GlobalColor.transparent)
+                painter = QPainter(pix)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setBrush(QColor(16, 19, 28))
+                painter.setPen(QPen(QColor(255, 255, 255, 200), 1.5))
+                painter.drawEllipse(2, 2, 20, 20)
+                painter.setBrush(QColor(255, 255, 255))
+                painter.drawEllipse(9, 9, 6, 6)
+                painter.end()
+
+                tray_icon = QSystemTrayIcon(QIcon(pix), q_app)
+                tray_icon.setToolTip("seeU • Supervisor Personal")
+
+                # Menú contextual
+                menu = QMenu()
+                action_open = menu.addAction("Abrir seeU")
+                action_orb = menu.addAction("Minimizar a Micro-Orbe")
+                menu.addSeparator()
+                action_quit = menu.addAction("Salir de seeU")
+
+                action_open.triggered.connect(lambda: window.evaluate_js("restoreFromOrb();"))
+                action_orb.triggered.connect(lambda: window.evaluate_js("minimizeToOrb();"))
+                action_quit.triggered.connect(lambda: api.close_app())
+
+                def on_tray_activated(reason):
+                    if reason == QSystemTrayIcon.ActivationReason.Trigger:
+                        window.evaluate_js("if(document.body.classList.contains('orb-mode')){ restoreFromOrb(); } else { minimizeToOrb(); }")
+
+                tray_icon.activated.connect(on_tray_activated)
+                tray_icon.setContextMenu(menu)
+                tray_icon.show()
+                # Mantener referencia viva para evitar recolección de basura
+                q_win._tray_icon = tray_icon
+        except Exception as e:
+            print(f"[seeU] System Tray no disponible: {e}")
+
+    _run_in_gui(_apply_in_gui)
 
 def start_ui():
     current_dir = Path(__file__).resolve().parent
@@ -185,4 +305,8 @@ def start_ui():
     )
 
     api.set_window(window)
-    webview.start(gui="qt", debug=False)
+
+    def on_app_started():
+        _setup_system_tray_and_tool_window(window, api)
+
+    webview.start(on_app_started, gui="qt", debug=False)

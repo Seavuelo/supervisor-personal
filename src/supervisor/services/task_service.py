@@ -19,6 +19,7 @@ class TaskService:
                 "tag": t.tag,
                 "goal_id": t.goal_id,
                 "recurrence": t.recurrence,
+                "is_priority": t.is_priority,
                 "created_at": t.created_at,
             }
             for t in tasks
@@ -34,6 +35,7 @@ class TaskService:
         tag: str = "Hoy",
         goal_id: Optional[int] = None,
         recurrence: str = "none",
+        is_priority: bool = False,
     ) -> Dict[str, Any]:
         task = Task(
             title=title.strip(),
@@ -44,6 +46,7 @@ class TaskService:
             tag=tag,
             goal_id=goal_id,
             recurrence=recurrence,
+            is_priority=is_priority,
         )
         task_id = task_repository.save_task(task)
         task.id = task_id
@@ -58,15 +61,31 @@ class TaskService:
             "tag": task.tag,
             "goal_id": task.goal_id,
             "recurrence": task.recurrence,
+            "is_priority": task.is_priority,
             "created_at": task.created_at,
         }
 
     @staticmethod
+    def toggle_priority(task_id: int) -> bool:
+        return task_repository.toggle_task_priority(task_id)
+
+    @staticmethod
+    def get_overdue_tasks() -> List[Dict[str, Any]]:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        return task_repository.get_overdue_tasks(today_str)
+
+    @staticmethod
+    def postpone_all_overdue() -> int:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        return task_repository.postpone_all_overdue(today_str, today_str)
+
+    @staticmethod
+    def dismiss_all_overdue() -> int:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        return task_repository.dismiss_all_overdue(today_str)
+
+    @staticmethod
     def get_weekly_heatmap() -> List[Dict[str, Any]]:
-        """
-        Retorna la tira semanal de Lunes a Domingo con su conteo de tareas
-        y nivel de intensidad para el heatmap visual de seeU.
-        """
         now = datetime.now()
         start_of_week = now - timedelta(days=now.weekday())
         day_chars = ["L", "M", "M", "J", "V", "S", "D"]
@@ -81,11 +100,6 @@ class TaskService:
             d_dt = start_of_week + timedelta(days=i)
             c = counts.get(d_date, 0)
 
-            # Nivel de intensidad:
-            # 0: 0 tareas (negro cristal)
-            # 1: 1 a 2 tareas (se aclara un poco)
-            # 2: 3 a 5 tareas (blanco/claro con texto oscuro)
-            # 3: 6 o más tareas (blanco sólido brillante con texto negro)
             if c == 0:
                 intensity = 0
             elif c <= 2:

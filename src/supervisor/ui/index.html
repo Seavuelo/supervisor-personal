@@ -117,6 +117,13 @@
       background: rgba(255, 255, 255, 0.15);
     }
 
+    .star-btn {
+      transition: transform 0.15s ease, color 0.15s ease;
+    }
+    .star-btn:hover {
+      transform: scale(1.18);
+    }
+
     .completed-task {
       opacity: 0.45;
       filter: grayscale(0.5);
@@ -130,6 +137,15 @@
 
     .day-square:hover {
       transform: translateY(-2px);
+    }
+
+    /* Fade suave entre vistas del carrusel */
+    .view-fade {
+      animation: fadeInView 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes fadeInView {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     /* Micro-orbe flotante 36px */
@@ -195,7 +211,7 @@
             </button>
           </div>
 
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1.5 cursor-pointer" onclick="resetToToday()" title="Volver al día actual">
             <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 8v5a8 8 0 0 0 16 0V8"></path>
               <circle cx="12" cy="11.5" r="2.5" fill="currentColor"></circle>
@@ -207,14 +223,14 @@
 
         <!-- Segmented Control de Vistas -->
         <div class="segmented-control no-drag">
-          <button id="tab-btn-focus" onclick="switchView('focus')" class="segment-btn active">Foco</button>
-          <button id="tab-btn-agenda" onclick="switchView('agenda')" class="segment-btn">Agenda</button>
-          <button id="tab-btn-goals" onclick="switchView('goals')" class="segment-btn">Metas</button>
+          <button id="tab-btn-focus" onclick="onUserSwitchTab('focus')" class="segment-btn active">Foco</button>
+          <button id="tab-btn-agenda" onclick="onUserSwitchTab('agenda')" class="segment-btn">Agenda</button>
+          <button id="tab-btn-goals" onclick="onUserSwitchTab('goals')" class="segment-btn">Metas</button>
         </div>
 
         <!-- Ajustes y Minimizar -->
         <div class="flex items-center gap-1 no-drag">
-          <button onclick="toggleSettingsView()" title="Ajustes de Gemini y Preferencias" class="w-6 h-6 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition flex items-center justify-center">
+          <button onclick="toggleSettingsView()" title="Ajustes de seeU" class="w-6 h-6 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition flex items-center justify-center">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
               <circle cx="12" cy="12" r="3"></circle>
@@ -243,6 +259,27 @@
       </form>
     </div>
 
+    <!-- BANNER DE REVISIÓN DE TAREAS DE DÍAS ANTERIORES -->
+    <div id="overdue-banner" class="hidden mt-2 p-2.5 rounded-2xl bg-black/60 border border-white/[0.2] backdrop-blur-xl text-xs no-drag shadow-md">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="text-white font-semibold readable-text">Tareas de días anteriores</div>
+          <div id="overdue-banner-text" class="text-neutral-200 text-[11px] mt-0.5 leading-tight">
+            Hay tareas pendientes de días anteriores. ¿Movemos para hoy? ¿O las descartamos?
+          </div>
+        </div>
+        <button onclick="dismissOverdueBanner()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
+      </div>
+      <div class="flex items-center gap-1.5 mt-2 pt-1 border-t border-white/[0.08]">
+        <button onclick="postponeOverdueToToday()" class="px-2.5 py-1 text-[10px] font-semibold bg-white text-neutral-950 rounded-lg hover:bg-neutral-100 transition shadow">
+          Mover para hoy
+        </button>
+        <button onclick="dismissOverdueTasks()" class="px-2.5 py-1 text-[10px] bg-white/[0.1] hover:bg-white/[0.2] text-neutral-200 rounded-lg transition">
+          Descartar
+        </button>
+      </div>
+    </div>
+
     <!-- PANEL DEL ASISTENTE AGENTE (Conversación viva, opciones y entrada libre) -->
     <div id="ai-assistant-box" class="hidden mt-2.5 p-3 rounded-2xl bg-black/60 border border-white/[0.22] backdrop-blur-xl text-xs no-drag shadow-2xl">
       <div id="ai-content"></div>
@@ -252,7 +289,7 @@
     <div class="mt-2.5 flex-1 flex flex-col min-h-0 overflow-hidden no-drag">
 
       <!-- VISTA 1: FOCO DE HOY -->
-      <div id="view-focus" class="flex-1 flex flex-col min-h-0">
+      <div id="view-focus" class="flex-1 flex flex-col min-h-0 view-fade">
         <!-- Barra de herramientas de lista -->
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text flex items-center gap-1.5">
@@ -262,6 +299,19 @@
           </div>
 
           <div class="flex items-center gap-1.5">
+            <!-- Botón Filtro Solo Prioritarias (Estrellita) -->
+            <button 
+              id="toggle-priority-filter-btn" 
+              onclick="togglePriorityOnlyFilter()" 
+              class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-neutral-300 hover:text-white transition readable-text flex items-center gap-1"
+              title="Mostrar únicamente actividades marcadas con estrella prioritaria"
+            >
+              <svg class="w-2.5 h-2.5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+              <span id="priority-filter-text">Prioritarios</span>
+            </button>
+
             <!-- Botón de tick para Ocultar/Mostrar hechas -->
             <button 
               id="toggle-hide-done-btn" 
@@ -269,7 +319,7 @@
               class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-neutral-300 hover:text-white transition readable-text flex items-center gap-1"
               title="Ocultar o mostrar actividades ya completadas"
             >
-              <svg id="hide-done-icon" class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
               </svg>
               <span id="hide-done-text">Ocultar hechas</span>
@@ -294,7 +344,7 @@
       </div>
 
       <!-- VISTA 2: AGENDA / CALENDARIO -->
-      <div id="view-agenda" class="hidden flex-1 flex flex-col min-h-0">
+      <div id="view-agenda" class="hidden flex-1 flex flex-col min-h-0 view-fade">
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text">
             <span>Compromisos, citas y entregas programadas</span>
@@ -308,7 +358,7 @@
       </div>
 
       <!-- VISTA 3: METAS Y HÁBITOS -->
-      <div id="view-goals" class="hidden flex-1 flex flex-col min-h-0">
+      <div id="view-goals" class="hidden flex-1 flex flex-col min-h-0 view-fade">
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text">
             <span>Proyectos y objetivos con micro-pasos</span>
@@ -340,12 +390,12 @@
       </div>
 
       <!-- VISTA 4: AJUSTES Y PREFERENCIAS -->
-      <div id="view-settings" class="hidden flex-1 flex flex-col justify-between pt-1">
+      <div id="view-settings" class="hidden flex-1 flex flex-col justify-between pt-1 view-fade">
         <div class="space-y-3">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-xs font-semibold text-white readable-text">Configuración de seeU</div>
-              <div class="text-[11px] text-neutral-300">Inteligencia Artificial y preferencias visuales</div>
+              <div class="text-[11px] text-neutral-300">Inteligencia Artificial y preferencias</div>
             </div>
             <span id="connection-status-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/[0.15] text-neutral-300 font-mono">
               Comprobando...
@@ -384,7 +434,7 @@
             </div>
             
             <div class="text-[10px] text-neutral-300 leading-normal">
-              Gemini 3.5 Flash razona en lenguaje natural, recuerda el diálogo y te ayuda a desglosar sin sobrecarga. Tu clave se almacena exclusivamente en tu SQLite local.
+              Gemini razona en lenguaje natural, recuerda el diálogo y te ayuda a desglosar sin sobrecarga. Almacenada exclusivamente en tu SQLite local.
             </div>
 
             <div class="flex items-center gap-2 pt-1">
@@ -406,10 +456,21 @@
             <div id="test-result-msg" class="text-[11px] font-medium mt-1"></div>
           </div>
 
-          <!-- Preferencias Visuales -->
+          <!-- Preferencias del Sistema y Visuales -->
           <div class="p-3 rounded-2xl bg-white/[0.05] border border-white/[0.12] space-y-2.5">
-            <div class="text-xs font-semibold text-white">Preferencias del Calendario</div>
+            <div class="text-xs font-semibold text-white">Comportamiento y Sistema</div>
             
+            <!-- Toggle Iniciar con el Computador -->
+            <label class="flex items-center justify-between cursor-pointer">
+              <span class="text-[11px] text-neutral-200">Iniciar seeU con el computador</span>
+              <input 
+                type="checkbox" 
+                id="pref-autostart" 
+                onchange="toggleAutostartPreference()" 
+                class="rounded bg-black/40 border-white/20 text-white focus:ring-0 cursor-pointer"
+              />
+            </label>
+
             <!-- Toggle Tira Semanal -->
             <label class="flex items-center justify-between cursor-pointer">
               <span class="text-[11px] text-neutral-200">Mostrar barra semanal (L M M J V S D)</span>
@@ -421,16 +482,21 @@
               />
             </label>
 
-            <!-- Toggle Ocultar Completadas -->
+            <!-- Toggle Rotación Automática -->
             <label class="flex items-center justify-between cursor-pointer">
-              <span class="text-[11px] text-neutral-200">Ocultar tareas ya realizadas</span>
+              <span class="text-[11px] text-neutral-200">Rotación automática de pestañas (cada 10s)</span>
               <input 
                 type="checkbox" 
-                id="pref-hide-completed" 
-                onchange="toggleHideCompletedPreference()" 
+                id="pref-auto-rotate" 
+                onchange="toggleAutoRotatePreference()" 
                 class="rounded bg-black/40 border-white/20 text-white focus:ring-0 cursor-pointer"
               />
             </label>
+          </div>
+
+          <!-- Créditos y Firma By Seavuelo -->
+          <div class="text-center py-1">
+            <span class="text-[10px] font-mono tracking-wider text-neutral-400 readable-text">seeU &bull; By Seavuelo</span>
           </div>
         </div>
 
@@ -457,10 +523,10 @@
       </div>
     </div>
 
-    <!-- PIE DE VENTANA -->
+    <!-- PIE DE VENTANA (Limpio y sobrio) -->
     <div id="footer-bar" class="mt-2 pt-1.5 border-t border-white/[0.08] flex items-center justify-between text-[10px] text-neutral-300 no-drag">
       <span id="footer-status" class="readable-text font-medium text-neutral-300">seeU activo</span>
-      <span class="font-mono readable-text text-neutral-300">Esc para orbe</span>
+      <span id="clock-display" class="font-mono readable-text text-neutral-400"></span>
     </div>
 
   </div>
@@ -489,18 +555,37 @@
     let allGoals = [];
     let weeklyHeatmapData = [];
     let pendingProposedTasks = null;
-    let selectedDayFilter = null; // null = ver foco habitual; 'YYYY-MM-DD' = filtrar por ese día
+    let selectedDayFilter = null; // null = ver foco del día actual
     let hideCompletedTasks = false;
     let showWeeklyCalendar = true;
+    let onlyPriorityFilter = false; // volátil en memoria: arranca en false
+    let autoRotateTabs = true;
+    let isMouseHovering = false;
+    let autoRotateTimer = null;
+    let userInteractionPauseUntil = 0;
+
+    // Reloj en tiempo real para el pie de ventana
+    function updateClock() {
+      const d = new Date();
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      const el = document.getElementById('clock-display');
+      if (el) el.textContent = `${h}:${m}`;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
 
     // Fecha en español
-    const now = new Date();
-    const options = { weekday: 'long', day: 'numeric', month: 'short' };
-    const dateStr = now.toLocaleDateString('es-ES', options);
-    document.getElementById('date-label').textContent = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+    function updateDateLabel() {
+      const d = new Date();
+      const opts = { weekday: 'long', day: 'numeric', month: 'short' };
+      const str = d.toLocaleDateString('es-ES', opts);
+      document.getElementById('date-label').textContent = str.charAt(0).toUpperCase() + str.slice(1);
+    }
+    updateDateLabel();
 
     // Conmutador de vistas
-    function switchView(viewName) {
+    function switchView(viewName, isAuto = false) {
       currentView = viewName;
 
       ['focus', 'agenda', 'goals', 'settings'].forEach(v => {
@@ -514,7 +599,12 @@
       });
 
       const target = document.getElementById(`view-${viewName}`);
-      if (target) target.classList.remove('hidden');
+      if (target) {
+        target.classList.remove('hidden');
+        target.classList.remove('view-fade');
+        void target.offsetWidth; // trigger reflow
+        target.classList.add('view-fade');
+      }
 
       const targetBtn = document.getElementById(`tab-btn-${viewName}`);
       if (targetBtn) targetBtn.classList.add('active');
@@ -537,12 +627,48 @@
       renderCurrentView();
     }
 
+    function onUserSwitchTab(viewName) {
+      userInteractionPauseUntil = Date.now() + 30000; // pausar rotación 30s por interacción
+      switchView(viewName);
+    }
+
     function toggleSettingsView() {
+      userInteractionPauseUntil = Date.now() + 30000;
       if (currentView === 'settings') {
         switchView('focus');
       } else {
         switchView('settings');
       }
+    }
+
+    // Rotación Automática Ambiental cada 10 segundos
+    const fullWin = document.getElementById('full-window');
+    fullWin.addEventListener('mouseenter', () => { isMouseHovering = true; });
+    fullWin.addEventListener('mouseleave', () => { isMouseHovering = false; });
+
+    function initAutoRotate() {
+      if (autoRotateTimer) clearInterval(autoRotateTimer);
+
+      autoRotateTimer = setInterval(() => {
+        if (!autoRotateTabs) return;
+        if (isMouseHovering) return; // pausar si el cursor está encima
+        if (Date.now() < userInteractionPauseUntil) return; // pausar tras interacción
+        if (currentView === 'settings') return; // no rotar en ajustes
+        if (document.body.classList.contains('orb-mode')) return; // no rotar en orbe
+
+        const sequence = ['focus', 'agenda', 'goals'];
+        let nextIdx = (sequence.indexOf(currentView) + 1) % sequence.length;
+        switchView(sequence[nextIdx], true);
+      }, 10000);
+    }
+    initAutoRotate();
+
+    // Restablecimiento instantáneo al día de hoy
+    function resetToToday() {
+      selectedDayFilter = null;
+      updateDateLabel();
+      switchView('focus');
+      fetchData();
     }
 
     function renderCurrentView() {
@@ -578,10 +704,14 @@
       const filterBanner = document.getElementById('active-day-filter-banner');
       if (selectedDayFilter) {
         filterBanner.classList.remove('hidden');
-        // Mostrar tareas de esa fecha específica O tareas diarias recurrentes
         list = list.filter(t => t.scheduled_date === selectedDayFilter || t.recurrence === 'daily');
       } else {
         filterBanner.classList.add('hidden');
+      }
+
+      // Filtro de prioridad (volátil en memoria)
+      if (onlyPriorityFilter) {
+        list = list.filter(t => t.is_priority);
       }
 
       // Filtro de completadas
@@ -592,8 +722,8 @@
       if (list.length === 0) {
         container.innerHTML = `
           <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
-            ${selectedDayFilter ? 'Sin actividades para este día.' : 'Sin tareas pendientes en foco.'}<br/>
-            <span class="text-[11px] text-neutral-400">Escribe algo arriba o selecciona otro día en la barra inferior.</span>
+            ${onlyPriorityFilter ? 'No hay tareas marcadas como prioritarias.' : (selectedDayFilter ? 'Sin actividades para este día.' : 'Sin tareas pendientes en foco.')}<br/>
+            <span class="text-[11px] text-neutral-400">Escribe algo arriba o pulsa en la estrella de una tarea para priorizar.</span>
           </div>
         `;
         return;
@@ -603,24 +733,99 @@
         const isCompleted = task.status === 'completada';
         const isDaily = task.recurrence === 'daily' || task.task_type === 'daily';
         const tagLabel = isDaily ? 'Diaria' : (task.tag || 'Hoy');
+        const isPriority = !!task.is_priority;
 
         const div = document.createElement('div');
-        div.className = `glass-tile group flex items-start gap-3 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
+        div.className = `glass-tile group flex items-start gap-2.5 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
         div.innerHTML = `
+          <!-- Tick de completado -->
           <button onclick="toggleTaskStatus(${task.id})" class="tick-box mt-0.5 w-4 h-4 rounded-md border ${isCompleted ? 'bg-white border-white' : 'border-neutral-300'} flex items-center justify-center">
             <svg class="w-3 h-3 text-neutral-950 ${isCompleted ? '' : 'hidden'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </button>
+
+          <!-- Título y descripción -->
           <div class="flex-1 min-w-0">
             <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${task.title}</div>
             ${task.description ? `<div class="text-[10px] text-neutral-200 mt-0.5 readable-text">${task.description}</div>` : ''}
           </div>
+
+          <!-- Estrellita Prioritaria Fina -->
+          <button onclick="togglePriority(${task.id})" title="${isPriority ? 'Quitar de prioritarios' : 'Marcar como prioritario'}" class="star-btn mt-0.5 p-1 text-white opacity-80 hover:opacity-100">
+            <svg class="w-3.5 h-3.5 ${isPriority ? 'text-white fill-white' : 'text-neutral-400 fill-none'}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </button>
+
+          <!-- Tag -->
           <span class="text-[10px] font-mono px-2 py-0.5 rounded-md ${isDaily ? 'bg-white/[0.18] border border-white/[0.28]' : 'bg-white/[0.1] border border-white/[0.14]'} text-white readable-text">${tagLabel}</span>
+
+          <!-- Eliminar -->
           <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
         `;
         container.appendChild(div);
       });
+    }
+
+    // Alternar filtro de solo prioritarias
+    function togglePriorityOnlyFilter() {
+      onlyPriorityFilter = !onlyPriorityFilter;
+      const btn = document.getElementById('toggle-priority-filter-btn');
+      if (onlyPriorityFilter) {
+        btn.classList.add('bg-white/[0.25]', 'border-white/[0.4]', 'text-white');
+      } else {
+        btn.classList.remove('bg-white/[0.25]', 'border-white/[0.4]', 'text-white');
+      }
+      renderCurrentView();
+    }
+
+    function togglePriority(taskId) {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.toggle_priority(taskId).then(newVal => {
+          const t = allTasks.find(item => item.id === taskId);
+          if (t) t.is_priority = newVal;
+          renderCurrentView();
+        });
+      }
+    }
+
+    // Tareas Atrasadas de Días Anteriores
+    function checkOverdueTasks() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.get_overdue_tasks().then(overdueList => {
+          const banner = document.getElementById('overdue-banner');
+          if (overdueList && overdueList.length > 0) {
+            banner.classList.remove('hidden');
+            document.getElementById('overdue-banner-text').textContent = 
+              `Hay ${overdueList.length} actividad${overdueList.length === 1 ? '' : 'es'} pendiente${overdueList.length === 1 ? '' : 's'} de días anteriores. ¿Movemos para hoy? ¿O las descartamos?`;
+          } else {
+            banner.classList.add('hidden');
+          }
+        });
+      }
+    }
+
+    function dismissOverdueBanner() {
+      document.getElementById('overdue-banner').classList.add('hidden');
+    }
+
+    function postponeOverdueToToday() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.postpone_all_overdue().then(() => {
+          dismissOverdueBanner();
+          fetchData();
+        });
+      }
+    }
+
+    function dismissOverdueTasks() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.dismiss_all_overdue().then(() => {
+          dismissOverdueBanner();
+          fetchData();
+        });
+      }
     }
 
     // Renderizado: Agenda / Calendario
@@ -645,8 +850,9 @@
 
       agendaTasks.forEach(task => {
         const isCompleted = task.status === 'completada';
+        const isPriority = !!task.is_priority;
         const div = document.createElement('div');
-        div.className = `glass-tile group flex items-start gap-3 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
+        div.className = `glass-tile group flex items-start gap-2.5 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
         div.innerHTML = `
           <button onclick="toggleTaskStatus(${task.id})" class="tick-box mt-0.5 w-4 h-4 rounded-md border ${isCompleted ? 'bg-white border-white' : 'border-neutral-300'} flex items-center justify-center">
             <svg class="w-3 h-3 text-neutral-950 ${isCompleted ? '' : 'hidden'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
@@ -660,6 +866,11 @@
               ${task.scheduled_time ? `<span class="font-mono bg-white/[0.1] px-1.5 py-0.2 rounded">${task.scheduled_time}</span>` : ''}
             </div>
           </div>
+          <button onclick="togglePriority(${task.id})" class="star-btn mt-0.5 p-1 text-white opacity-80 hover:opacity-100">
+            <svg class="w-3.5 h-3.5 ${isPriority ? 'text-white fill-white' : 'text-neutral-400 fill-none'}" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </button>
           <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${task.tag || 'Cita'}</span>
           <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
         `;
@@ -721,17 +932,12 @@
             </div>
           </div>
 
-          <!-- Barra de Progreso -->
           <div class="w-full h-1.5 rounded-full bg-white/[0.1] overflow-hidden">
             <div class="h-full bg-white transition-all duration-300" style="width: ${goal.progress_percentage}%"></div>
           </div>
 
-          <!-- Micro-pasos -->
-          <div class="space-y-1 pt-1">
-            ${stepsHtml}
-          </div>
+          <div class="space-y-1 pt-1">${stepsHtml}</div>
 
-          <!-- Agregar micro-paso -->
           <div class="pt-1 flex items-center gap-1.5">
             <input id="new-step-input-${goal.id}" type="text" placeholder="Nuevo micro-paso (20 min)..." class="glass-input flex-1 rounded-lg px-2.5 py-1 text-[11px] text-white placeholder-neutral-400 focus:outline-none" />
             <button onclick="addStepToGoal(${goal.id})" class="px-2.5 py-1 text-[10px] font-semibold bg-white/[0.15] hover:bg-white/[0.25] text-white rounded-lg transition">Añadir</button>
@@ -765,19 +971,14 @@
         const isSelected = selectedDayFilter === day.date;
         const btn = document.createElement('div');
 
-        // Estilos según intensidad descrita por el usuario
         let intensityClass = '';
         if (day.intensity === 0) {
-          // 0 tareas: negro cristal tenue, letra blanca suave
           intensityClass = 'bg-white/[0.04] text-neutral-300 border border-white/[0.08]';
         } else if (day.intensity === 1) {
-          // 1 a 2 tareas: se aclara un poco, letra blanca nítida
           intensityClass = 'bg-white/[0.22] text-white border border-white/[0.32] shadow-sm';
         } else if (day.intensity === 2) {
-          // 3 a 5 tareas: botón blanco translúcido intenso, letra negra
           intensityClass = 'bg-white/[0.78] text-neutral-950 font-bold border border-white/[0.9]';
         } else {
-          // 6+ tareas: blanco sólido brillante, letra negra negrita
           intensityClass = 'bg-white text-black font-extrabold border border-white shadow-[0_0_10px_rgba(255,255,255,0.45)]';
         }
 
@@ -797,6 +998,7 @@
     }
 
     function selectDayFilter(day) {
+      userInteractionPauseUntil = Date.now() + 30000;
       if (selectedDayFilter === day.date) {
         clearDayFilter();
       } else {
@@ -826,24 +1028,13 @@
     function updateHideCompletedUI() {
       const text = document.getElementById('hide-done-text');
       const btn = document.getElementById('toggle-hide-done-btn');
-      const prefCheck = document.getElementById('pref-hide-completed');
 
       if (hideCompletedTasks) {
         text.textContent = 'Ver hechas';
         btn.classList.add('bg-white/[0.2]', 'border-white/[0.3]', 'text-white');
-        if (prefCheck) prefCheck.checked = true;
       } else {
         text.textContent = 'Ocultar hechas';
         btn.classList.remove('bg-white/[0.2]', 'border-white/[0.3]', 'text-white');
-        if (prefCheck) prefCheck.checked = false;
-      }
-    }
-
-    function toggleHideCompletedPreference() {
-      hideCompletedTasks = document.getElementById('pref-hide-completed').checked;
-      updateHideCompletedUI();
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.set_setting('hide_completed_tasks', hideCompletedTasks ? 'true' : 'false');
       }
     }
 
@@ -862,6 +1053,22 @@
       }
     }
 
+    function toggleAutoRotatePreference() {
+      autoRotateTabs = document.getElementById('pref-auto-rotate').checked;
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.set_setting('auto_rotate_tabs', autoRotateTabs ? 'true' : 'false');
+      }
+    }
+
+    function toggleAutostartPreference() {
+      const chk = document.getElementById('pref-autostart');
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.set_autostart(chk.checked).then(active => {
+          chk.checked = active;
+        });
+      }
+    }
+
     function loadSettingsToUI() {
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.get_api_key_masked().then(k => {
@@ -872,15 +1079,21 @@
           const chk = document.getElementById('pref-show-heatmap');
           if (chk) chk.checked = showWeeklyCalendar;
         });
-        window.pywebview.api.get_setting('hide_completed_tasks', 'false').then(v => {
-          hideCompletedTasks = (v === 'true');
-          updateHideCompletedUI();
+        window.pywebview.api.get_setting('auto_rotate_tabs', 'true').then(v => {
+          autoRotateTabs = (v === 'true');
+          const chk = document.getElementById('pref-auto-rotate');
+          if (chk) chk.checked = autoRotateTabs;
+        });
+        window.pywebview.api.get_autostart_status().then(status => {
+          const chk = document.getElementById('pref-autostart');
+          if (chk) chk.checked = status;
         });
         checkConnectionStatus();
       }
     }
 
     function showCreateGoalModal() {
+      userInteractionPauseUntil = Date.now() + 30000;
       document.getElementById('new-goal-box').classList.remove('hidden');
       document.getElementById('goal-title-input').focus();
     }
@@ -905,6 +1118,7 @@
     }
 
     function addStepToGoal(goalId) {
+      userInteractionPauseUntil = Date.now() + 30000;
       const input = document.getElementById(`new-step-input-${goalId}`);
       const val = input.value.trim();
       if (!val) return;
@@ -940,6 +1154,7 @@
           weeklyHeatmapData = heatmap;
           renderWeeklyHeatmap();
         });
+        checkOverdueTasks();
         checkConnectionStatus();
       }
     }
@@ -949,17 +1164,22 @@
         window.pywebview.api.get_setting('show_weekly_calendar', 'true').then(v => {
           showWeeklyCalendar = (v === 'true');
         });
+        window.pywebview.api.get_setting('auto_rotate_tabs', 'true').then(v => {
+          autoRotateTabs = (v === 'true');
+        });
         window.pywebview.api.get_setting('hide_completed_tasks', 'false').then(v => {
           hideCompletedTasks = (v === 'true');
           updateHideCompletedUI();
         });
       }
       fetchData();
+      checkOverdueTasks();
     });
 
     // Envío desde la entrada de texto rápida
     document.getElementById('capture-form').addEventListener('submit', function(e) {
       e.preventDefault();
+      userInteractionPauseUntil = Date.now() + 30000;
       const input = document.getElementById('task-input');
       const val = input.value.trim();
       if (!val) return;
@@ -1094,7 +1314,7 @@
       if (result.action === 'scheduled_task') {
         const t = (result.tasks && result.tasks[0]);
         if (t) {
-          createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, 'appointment', null, t.recurrence || 'none');
+          createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, 'appointment', null, t.recurrence || 'none', false);
         }
         aiContent.innerHTML = `
           <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
@@ -1115,7 +1335,7 @@
       if (result.action === 'quick_task') {
         const t = (result.tasks && result.tasks[0]);
         if (t) {
-          createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, t.task_type || 'quick', null, t.recurrence || 'none');
+          createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, t.task_type || 'quick', null, t.recurrence || 'none', false);
         }
         aiContent.innerHTML = `
           <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
@@ -1135,6 +1355,7 @@
     }
 
     function sendDialogReply() {
+      userInteractionPauseUntil = Date.now() + 30000;
       const input = document.getElementById('ai-dialog-input');
       if (!input) return;
       const val = input.value.trim();
@@ -1143,6 +1364,7 @@
     }
 
     function askForOtherPlan() {
+      userInteractionPauseUntil = Date.now() + 30000;
       sendToAI('no quiero esas actividades, sugiéreme algo distinto o más corto');
     }
 
@@ -1162,7 +1384,7 @@
         });
       } else {
         pendingProposedTasks.tasks.forEach(st => {
-          createTaskInDB(st.title, st.tag || 'Paso', st.scheduled_time, st.scheduled_date, st.task_type || 'micro_step', null, st.recurrence || 'none');
+          createTaskInDB(st.title, st.tag || 'Paso', st.scheduled_time, st.scheduled_date, st.task_type || 'micro_step', null, st.recurrence || 'none', false);
         });
         dismissAIBound();
         fetchData();
@@ -1200,9 +1422,9 @@
       });
     }
 
-    function createTaskInDB(title, tag, scheduled_time, scheduled_date, task_type, goal_id, recurrence) {
+    function createTaskInDB(title, tag, scheduled_time, scheduled_date, task_type, goal_id, recurrence, is_priority) {
       if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.create_task(title, tag, scheduled_time, scheduled_date, task_type, goal_id, recurrence || 'none').then(newTask => {
+        window.pywebview.api.create_task(title, tag, scheduled_time, scheduled_date, task_type, goal_id, recurrence || 'none', is_priority || false).then(newTask => {
           allTasks.unshift(newTask);
           renderCurrentView();
           fetchData();
@@ -1330,6 +1552,7 @@
       document.body.classList.remove('orb-mode');
       document.getElementById('minimized-orb').classList.add('hidden');
       document.getElementById('full-window').classList.remove('hidden');
+      resetToToday();
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.restore_window();
       }

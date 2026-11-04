@@ -29,6 +29,7 @@ def create_tables():
             tag TEXT DEFAULT 'Hoy',
             goal_id INTEGER,
             recurrence TEXT DEFAULT 'none',
+            is_priority INTEGER DEFAULT 0,
             created_at TEXT,
             FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE
         )
@@ -53,6 +54,7 @@ def create_tables():
         ("tag", "TEXT DEFAULT 'Hoy'"),
         ("goal_id", "INTEGER"),
         ("recurrence", "TEXT DEFAULT 'none'"),
+        ("is_priority", "INTEGER DEFAULT 0"),
         ("created_at", "TEXT")
     ]
 
@@ -60,9 +62,11 @@ def create_tables():
         if col_name not in existing_columns:
             cursor.execute(f"ALTER TABLE tasks ADD COLUMN {col_name} {col_type}")
 
-    # Valores predeterminados en settings si no están
+    # Valores predeterminados en settings
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('show_weekly_calendar', 'true')")
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('hide_completed_tasks', 'false')")
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_rotate_tabs', 'true')")
+    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('autostart', 'false')")
 
     connection.commit()
     connection.close()
