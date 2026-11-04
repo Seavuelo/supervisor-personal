@@ -13,6 +13,7 @@ class AIService:
         db_key = settings_repository.get_setting("gemini_api_key")
         self.api_key = db_key or os.getenv("GEMINI_API_KEY", "")
         self.client = None
+        self.history: List[Dict[str, str]] = []
         self._init_client()
 
     def _init_client(self):
@@ -44,7 +45,7 @@ class AIService:
         if not self.api_key:
             return {
                 "status": "offline",
-                "message": "Sin clave configurada. Operando en modo local offline."
+                "message": "Sin clave configurada. Operando en modo local autónomo."
             }
 
         if not self.client:
@@ -80,140 +81,84 @@ class AIService:
 
         return {"status": "error", "message": "No se recibió respuesta válida."}
 
+    def clear_history(self):
+        """Reinicia el contexto de la conversación con el agente."""
+        self.history = []
+
     def process_input(self, user_text: str) -> Dict[str, Any]:
         """
-        Procesa la intención del usuario.
-        Si la intención es ambigua, vaga o carece de datos esenciales (hora, materia, plazo),
-        la IA DEBE intervenir activamente preguntando para guiar al usuario y aliviar su sobrecarga.
+        Punto de entrada conversacional multi-turno.
+        Mantiene el contexto acumulado de la sesión para que el agente dialogue de verdad.
         """
         text = user_text.strip()
         if not text:
             return {"action": "none"}
 
+        # Registrar entrada del usuario en el historial
+        self.history.append({"role": "user", "text": text})
+
+        # Mantener solo los últimos 10 turnos para agilidad mental
+        if len(self.history) > 10:
+            self.history = self.history[-10:]
+
         if self.client:
             try:
-                return self._call_gemini(text)
+                result = self._call_gemini_conversational()
+                # Registrar respuesta de la IA en el historial
+                assistant_msg = result.get("message") or result.get("question") or ""
+                if assistant_msg:
+                    self.history.append({"role": "assistant", "text": assistant_msg})
+                return result
             except Exception as e:
                 print(f"[seeU] Fallback a motor local tras error de API: {e}")
 
-        return self._local_rule_engine(text)
+        # Motor Local Autónomo adaptativo
+        result = self._local_conversational_agent(text)
+        assistant_msg = result.get("message") or result.get("question") or ""
+        if assistant_msg:
+            self.history.append({"role": "assistant", "text": assistant_msg})
+        return result
 
-    def process_followup(self, original_text: str, user_answer: str, context_type: str, extra_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Procesa la segunda fase de la conversación: cuando el usuario responde a la pregunta de la IA.
-        """
-        ans = user_answer.strip()
-        extra = extra_data or {}
-
-        # 1. Contexto de estudio: el usuario especificó la materia o tema
-        if context_type == "study_topic":
-            subject = ans if ans.lower() not in ["otro tema...", "sin definir"] else original_text
-            # Generar desglose en micro-pasos
-            return {
-                "action": "micro_steps",
-                "question": f"Desglose para estudiar {subject} con baja fricción:",
-                "is_goal": True,
-                "goal_title": f"Estudio: {subject}",
-                "tasks": [
-                    {"title": f"{subject}: Revisión inicial o lectura de conceptos (20 min)", "tag": "20 min", "task_type": "micro_step"},
-                    {"title": f"{subject}: Ejercicio o práctica de 1 caso concreto (30 min)", "tag": "30 min", "task_type": "micro_step"},
-                    {"title": f"{subject}: Apuntes o síntesis de lo aprendido (15 min)", "tag": "15 min", "task_type": "micro_step"}
-                ]
-            }
-
-        # 2. Contexto de cita médica / reunión: el usuario especificó la hora
-        if context_type == "appointment_time":
-            time_val = None if ans.lower() in ["sin hora fija", "sin hora"] else ans
-            date_val = extra.get("target_date")
-            tag_label = f"{time_val}" if time_val else "Cita"
-            return {
-                "action": "scheduled_task",
-                "tasks": [
-                    {
-                        "title": original_text,
-                        "tag": tag_label,
-                        "scheduled_time": time_val,
-                        "scheduled_date": date_val,
-                        "task_type": "appointment"
-                    }
-                ]
-            }
-
-        # 3. Contexto de plazo / deadline
-        if context_type == "deadline":
-            tag_label = ans
-            return {
-                "action": "quick_task",
-                "tasks": [
-                    {
-                        "title": f"{original_text} ({ans})",
-                        "tag": tag_label,
-                        "scheduled_time": None,
-                        "scheduled_date": None,
-                        "task_type": "quick"
-                    }
-                ]
-            }
-
-        # Por defecto
-        return {
-            "action": "quick_task",
-            "tasks": [{"title": f"{original_text} - {ans}", "tag": "Hoy", "task_type": "quick"}]
-        }
-
-    def _call_gemini(self, text: str) -> Dict[str, Any]:
+    def _call_gemini_conversational(self) -> Dict[str, Any]:
         now = datetime.now()
         fecha_actual = now.strftime("%Y-%m-%d (%A)")
 
+        # Formatear el historial de conversación para darle contexto completo a Gemini
+        history_str = "\n".join([f"{msg['role'].upper()}: {msg['text']}" for msg in self.history])
+
         prompt = f"""
-Eres seeU, un supervisor y compañero personal proactivo, enfocado en quitarle al usuario el agobio de pensar y estructurar sus notas.
+Eres seeU, un supervisor personal empático, inteligente y sobrio. Tu misión es ayudar a una persona que siente sobrecarga cognitiva y agobio mental a definir, negociar y anotar sus actividades de forma tranquila y sin parálisis.
+
 Fecha y hora de referencia: {fecha_actual}, {now.strftime("%H:%M")}.
-Entrada rápida del usuario: "{text}".
 
-Directrices críticas:
-1. Cero tono publicitario, CERO emojis.
-2. Si el texto es VAGO o le faltan detalles esenciales, TU DEBER ES INTERVENIR Y PREGUNTAR:
-   - Si dice "quiero estudiar", "estudiar", "tengo que estudiar", "leer" sin decir qué:
-     action: "question"
-     context_type: "study_topic"
-     question: "¿Qué materia o tema específico quieres estudiar?"
-     options: ["Programación / Código", "Tesis / Grado", "Lectura técnica", "Matemáticas"]
-     allow_custom: true
-     custom_placeholder: "O escribe la materia o tema..."
-   - Si menciona una cita, médico, dentista, reunión o evento pero NO especifica la hora exacta:
-     action: "question"
-     context_type: "appointment_time"
-     question: "¿A qué hora tienes programada la cita?"
-     options: ["09:00", "11:30", "15:00", "17:00", "Sin hora fija"]
-     allow_custom: true
-     custom_placeholder: "O escribe la hora exacta (ej: 14:15)..."
-     target_date: fecha inferida (si dijo 'mañana', calcular la fecha ISO de mañana)
-   - Si menciona una entrega, informe, proyecto o tarea grande sin plazo:
-     action: "question"
-     context_type: "deadline"
-     question: "¿Para cuándo necesitas tenerlo listo?"
-     options: ["Para hoy", "Para mañana", "Esta semana"]
-     allow_custom: true
-     custom_placeholder: "O escribe la fecha o plazo..."
-3. Si el texto YA TIENE todos los detalles necesarios (ej: "médico mañana a las 11:30" o "comprar leche en el súper"):
-   - Si es cita con hora y/o fecha:
-     action: "scheduled_task"
-     tasks: [{{"title": "texto limpio", "tag": "Hora o Fecha", "scheduled_time": "HH:MM", "scheduled_date": "YYYY-MM-DD", "task_type": "appointment"}}]
-   - Si es tarea directa para hoy:
-     action: "quick_task"
-     tasks: [{{"title": "texto limpio", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick"}}]
+HISTORIAL DE LA CONVERSACIÓN RECIENTE:
+{history_str}
 
-Responde ÚNICAMENTE un JSON válido:
+REGLAS DE COMPORTAMIENTO COMO AGENTE CONVERSACIONAL:
+1. NUNCA respondas con plantillas estáticas repetitivas ni seas robótico. CERO emojis. Tono sereno, profesional y reconfortante.
+2. Si el usuario rechaza algo (ej: "no quiero estudiar", "quiero otras actividades", "otra cosa"):
+   - Adapta el rumbo con flexibilidad. Pregúntale qué tipo de cosas le apetecen hoy (ej: tareas prácticas, ordenar pendientes, descanso activo, desconectar) y cuánto tiempo tiene disponible.
+3. Si el usuario da un plazo o tiempo disponible (ej: "tengo 40 minutos", "tengo 1 hora"):
+   - Desglosa un plan realista a la medida exacta de ese tiempo (ej: si tiene 40 min: bloque de 20 min + 5 descanso + 15 min de cierre).
+4. Si el usuario propone algo vago (ej: "quiero estudiar"):
+   - Pregúntale de forma natural qué materia o proyecto tiene en mente, o qué le causa más fricción.
+5. Si es una cita o compromiso (ej: "médico", "dentista") sin hora:
+   - Pregúntale a qué hora está programada.
+6. Si la propuesta ya está clara y acordada:
+   - Proporciona un desglose de tareas concretas listas para guardar.
+
+ESTRUCTURA DE RESPUESTA REQUERIDA (JSON ESTRICTO):
 {{
-  "action": "question" | "micro_steps" | "quick_task" | "scheduled_task",
-  "context_type": "study_topic" | "appointment_time" | "deadline" | "general",
-  "question": "texto de la pregunta si corresponde",
-  "options": ["opcion 1", "opcion 2"],
+  "action": "question" | "propose_tasks" | "scheduled_task" | "quick_task",
+  "message": "Tu respuesta conversacional articulada al usuario",
+  "question": "Pregunta de seguimiento si aplica",
+  "options": ["Opcion sugerida 1", "Opcion sugerida 2", "Opcion sugerida 3"],
   "allow_custom": true,
-  "custom_placeholder": "texto sugerido en el campo de texto libre",
-  "target_date": "YYYY-MM-DD o null",
+  "custom_placeholder": "Placeholder para que el usuario responda libremente",
+  "is_goal": true | false,
+  "goal_title": "Título si es meta",
   "tasks": [
-    {{"title": "texto", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick"}}
+    {{"title": "Paso 1 muy concreto", "tag": "20 min", "scheduled_time": null, "scheduled_date": null, "task_type": "micro_step" | "appointment" | "quick"}}
   ]
 }}
 """
@@ -225,6 +170,216 @@ Responde ÚNICAMENTE un JSON válido:
         clean_json = re.sub(r"^```(?:json)?\s*", "", raw_text)
         clean_json = re.sub(r"\s*```$", "", clean_json)
         return json.loads(clean_json)
+
+    def _local_conversational_agent(self, current_text: str) -> Dict[str, Any]:
+        """
+        Motor Local Autónomo con máquina de estados y memoria de contexto.
+        Simula una conversación real cuando el usuario aún no ha configurado Gemini o está sin conexión.
+        """
+        lower = current_text.lower().strip()
+        now = datetime.now()
+
+        # Revisar historial previo para saber en qué estábamos hablando
+        prev_user_msgs = [m["text"] for m in self.history[:-1] if m["role"] == "user"]
+        prev_assistant_msgs = [m["text"] for m in self.history if m["role"] == "assistant"]
+        last_assistant_msg = prev_assistant_msgs[-1].lower() if prev_assistant_msgs else ""
+        last_user_msg = prev_user_msgs[-1].lower() if prev_user_msgs else ""
+
+        # Detección de hora explícita
+        time_match = re.search(r"(\d{1,2}:\d{2})", lower)
+        hour_match = re.search(r"a las (\d{1,2})", lower)
+        detected_time = time_match.group(1) if time_match else (f"{int(hour_match.group(1)):02d}:00" if hour_match else None)
+
+        # 0. RESOLUCIÓN DE HORA TRAS PREGUNTA DE CITA PREVIA
+        if detected_time and ("a qué hora" in last_assistant_msg or "agendemos" in last_assistant_msg):
+            # Encontrar el texto de la cita en el mensaje anterior
+            palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
+            appt_title = next((m for m in reversed(prev_user_msgs) if any(w in m.lower() for w in palabras_cita)), "Cita médica")
+            return {
+                "action": "scheduled_task",
+                "message": f"He agendado '{appt_title}' para las {detected_time} en tu Agenda.",
+                "tasks": [
+                    {
+                        "title": appt_title,
+                        "tag": f"Cita {detected_time}",
+                        "scheduled_time": detected_time,
+                        "scheduled_date": (now + timedelta(days=1)).strftime("%Y-%m-%d") if "mañana" in appt_title.lower() else now.strftime("%Y-%m-%d"),
+                        "task_type": "appointment"
+                    }
+                ]
+            }
+
+        # 1. DETECCIÓN DE RECHAZO O CAMBIO DE RUMBO
+        # Ej: "no quiero otras actividades", "no", "otra cosa", "cambiar", "no me gusta", "prefiero otra cosa"
+        if any(w in lower for w in ["no quiero", "otra actividad", "otras actividades", "otra cosa", "cambiar", "no me gusta", "algo distinto", "mejor no"]):
+            return {
+                "action": "question",
+                "message": "Entendido, cambiamos de enfoque por completo. Para evitar agobio, ¿qué tipo de actividad prefieres ahora y de cuánto tiempo dispones?",
+                "options": [
+                    "Tareas prácticas cortas",
+                    "Ordenar apuntes y notas",
+                    "Pausa activa o descanso",
+                    "Avanzar en un proyecto pendiente"
+                ],
+                "allow_custom": True,
+                "custom_placeholder": "Ej: Tengo 45 minutos y prefiero ordenar mi escritorio..."
+            }
+
+        # 2. DETECCIÓN DE TIEMPO DISPONIBLE
+        # Ej: "tengo 40 minutos", "tengo 1 hora", "30 min", "media hora"
+        time_avail_match = re.search(r"(\d+)\s*(?:minutos|min|m\b)", lower)
+        hour_avail_match = re.search(r"(\d+)\s*(?:horas|hora|h\b)", lower)
+        is_half_hour = "media hora" in lower
+
+        minutes_available = None
+        if time_avail_match:
+            minutes_available = int(time_avail_match.group(1))
+        elif hour_avail_match:
+            minutes_available = int(hour_avail_match.group(1)) * 60
+        elif is_half_hour:
+            minutes_available = 30
+
+        if minutes_available:
+            # Calcular bloques inteligentes adaptados al tiempo real del usuario
+            if minutes_available <= 25:
+                tasks = [
+                    {"title": f"Foco único de alta prioridad ({minutes_available - 5} min)", "tag": f"{minutes_available - 5} min", "task_type": "micro_step"},
+                    {"title": "Cierre y pausa de descanso (5 min)", "tag": "5 min", "task_type": "micro_step"}
+                ]
+            elif minutes_available <= 50:
+                p1 = int(minutes_available * 0.5)
+                p2 = minutes_available - p1 - 5
+                tasks = [
+                    {"title": f"Avance principal enfocado ({p1} min)", "tag": f"{p1} min", "task_type": "micro_step"},
+                    {"title": "Pausa breve de respiración o agua (5 min)", "tag": "5 min", "task_type": "micro_step"},
+                    {"title": f"Revisión y cierre de pendientes ({p2} min)", "tag": f"{p2} min", "task_type": "micro_step"}
+                ]
+            else:
+                tasks = [
+                    {"title": "Bloque 1 de desarrollo o lectura (25 min)", "tag": "25 min", "task_type": "micro_step"},
+                    {"title": "Pausa activa (5 min)", "tag": "5 min", "task_type": "micro_step"},
+                    {"title": "Bloque 2 de práctica o síntesis (25 min)", "tag": "25 min", "task_type": "micro_step"}
+                ]
+
+            return {
+                "action": "propose_tasks",
+                "message": f"Perfecto. Con {minutes_available} minutos disponibles, he distribuido tu tiempo en bloques de baja fricción para que no sientas sobrecarga:",
+                "is_goal": True,
+                "goal_title": f"Sesión de {minutes_available} min",
+                "tasks": tasks
+            }
+
+        # 3. DETECCIÓN DE CITA MÉDICA O REUNIÓN
+        palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
+        time_match = re.search(r"(\d{1,2}:\d{2})", lower)
+        hour_match = re.search(r"a las (\d{1,2})", lower)
+        detected_time = time_match.group(1) if time_match else (f"{int(hour_match.group(1)):02d}:00" if hour_match else None)
+
+        dias_map = {"lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6}
+        detected_date = None
+        detected_day_name = None
+
+        if "mañana" in lower or "manana" in lower:
+            tomorrow = now + timedelta(days=1)
+            detected_date = tomorrow.strftime("%Y-%m-%d")
+            detected_day_name = "Mañana"
+        elif "hoy" in lower:
+            detected_date = now.strftime("%Y-%m-%d")
+            detected_day_name = "Hoy"
+        else:
+            for dia, weekday_num in dias_map.items():
+                if dia in lower:
+                    days_ahead = (weekday_num - now.weekday() + 7) % 7
+                    if days_ahead == 0:
+                        days_ahead = 7
+                    detected_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+                    detected_day_name = dia.capitalize()
+                    break
+
+        if any(w in lower for w in palabras_cita) or (detected_date and detected_date != now.strftime("%Y-%m-%d")):
+            if not detected_time:
+                date_str = detected_day_name or "la cita"
+                return {
+                    "action": "question",
+                    "message": f"Entendido, agendemos {current_text}. ¿A qué hora está programada?",
+                    "options": ["09:30", "11:00", "15:00", "17:30", "Sin hora fija"],
+                    "allow_custom": True,
+                    "custom_placeholder": "Ej: 14:15 o a las 4 de la tarde...",
+                    "target_date": detected_date or now.strftime("%Y-%m-%d")
+                }
+            else:
+                tag_label = f"{detected_day_name or 'Agenda'} {detected_time}"
+                return {
+                    "action": "scheduled_task",
+                    "message": f"Compromiso agendado con éxito para {detected_day_name or 'Hoy'} a las {detected_time}.",
+                    "tasks": [
+                        {
+                            "title": current_text,
+                            "tag": tag_label,
+                            "scheduled_time": detected_time,
+                            "scheduled_date": detected_date or now.strftime("%Y-%m-%d"),
+                            "task_type": "appointment"
+                        }
+                    ]
+                }
+
+        # 4. CASO DE ESTUDIO O APRENDIZAJE
+        palabras_estudio = ["estudiar", "estudio", "aprender", "repasar", "leer", "tesis", "curso"]
+        if any(w in lower for w in palabras_estudio):
+            materias = ["python", "redes", "bases de datos", "cálculo", "matemáticas", "tesis", "algoritmos", "arquitectura"]
+            materia_encontrada = next((m.capitalize() for m in materias if m in lower), None)
+
+            if not materia_encontrada and len(lower.split()) <= 4:
+                return {
+                    "action": "question",
+                    "message": "¿Qué materia o tema específico quieres abordar hoy? Si tienes dudas, dime qué es lo que más te cuesta empezar.",
+                    "options": [
+                        "Python / Algoritmos",
+                        "Tesis / Marco Teórico",
+                        "Redes y Sistemas",
+                        "Lectura de apuntes"
+                    ],
+                    "allow_custom": True,
+                    "custom_placeholder": "Escribe la materia o describe lo que necesitas hacer..."
+                }
+            else:
+                subject = materia_encontrada or current_text
+                return {
+                    "action": "propose_tasks",
+                    "message": f"Para avanzar en {subject} sin que resulte pesado, te sugiero esta estructura de pasos cortos:",
+                    "is_goal": True,
+                    "goal_title": f"Estudio: {subject}",
+                    "tasks": [
+                        {"title": f"{subject}: Revisar conceptos esenciales o apuntes (20 min)", "tag": "20 min", "task_type": "micro_step"},
+                        {"title": f"{subject}: Resolver 1 ejercicio o escribir 1 sección (30 min)", "tag": "30 min", "task_type": "micro_step"},
+                        {"title": f"{subject}: Anotar 3 aprendizajes o pendientes (15 min)", "tag": "15 min", "task_type": "micro_step"}
+                    ]
+                }
+
+        # 5. SI MENCIONA UNA MATERIA DIRECTA (por ejemplo tras la pregunta anterior)
+        # Ej: "python", "bases de datos", "redes"
+        if len(lower.split()) <= 3 and any(w in lower for w in ["python", "redes", "datos", "tesis", "código", "codigo", "sql", "java"]):
+            subject = current_text.capitalize()
+            return {
+                "action": "propose_tasks",
+                "message": f"Excelente elección. Aquí tienes un desglose progresivo para {subject}:",
+                "is_goal": True,
+                "goal_title": f"Proyecto: {subject}",
+                "tasks": [
+                    {"title": f"{subject}: Configurar entorno o repasar fundamentos (20 min)", "tag": "20 min", "task_type": "micro_step"},
+                    {"title": f"{subject}: Implementar una prueba práctica o código funcional (30 min)", "tag": "30 min", "task_type": "micro_step"},
+                    {"title": f"{subject}: Documentar o guardar avances (15 min)", "tag": "15 min", "task_type": "micro_step"}
+                ]
+            }
+
+        # 6. Tarea simple directa
+        return {
+            "action": "quick_task",
+            "message": f"He anotado '{current_text}' directamente en tu Foco de Hoy.",
+            "tasks": [
+                {"title": current_text, "tag": "Hoy", "scheduled_time": None, "scheduled_date": None, "task_type": "quick"}
+            ]
+        }
 
     def triage_focus(self, pending_tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not pending_tasks:
@@ -273,133 +428,4 @@ Responde ÚNICAMENTE un JSON válido:
             "message": "Para aliviar la sobrecarga, nos enfocaremos únicamente en las dos primeras tareas. El resto queda en pausa para después.",
             "keep_ids": keep,
             "postpone_ids": postpone
-        }
-
-    def _local_rule_engine(self, text: str) -> Dict[str, Any]:
-        lower = text.lower().strip()
-        now = datetime.now()
-
-        # Detección de fechas relativas
-        dias_map = {
-            "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
-            "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
-        }
-
-        detected_date = None
-        detected_day_name = None
-
-        if "mañana" in lower or "manana" in lower:
-            tomorrow = now + timedelta(days=1)
-            detected_date = tomorrow.strftime("%Y-%m-%d")
-            detected_day_name = "Mañana"
-        elif "hoy" in lower:
-            detected_date = now.strftime("%Y-%m-%d")
-            detected_day_name = "Hoy"
-        else:
-            for dia, weekday_num in dias_map.items():
-                if dia in lower:
-                    days_ahead = (weekday_num - now.weekday() + 7) % 7
-                    if days_ahead == 0:
-                        days_ahead = 7
-                    target_date = now + timedelta(days=days_ahead)
-                    detected_date = target_date.strftime("%Y-%m-%d")
-                    detected_day_name = dia.capitalize()
-                    break
-
-        # Detección de hora explícita
-        time_match = re.search(r"(\d{1,2}:\d{2})", lower)
-        detected_time = None
-        if time_match:
-            detected_time = time_match.group(1)
-        else:
-            hour_match = re.search(r"a las (\d{1,2})", lower)
-            if hour_match:
-                detected_time = f"{int(hour_match.group(1)):02d}:00"
-
-        # 1. CASO ESTUDIO: Detectar si es vago o específico
-        palabras_estudio = ["estudiar", "estudio", "aprender", "curso", "repasar", "leer"]
-        if any(w in lower for w in palabras_estudio):
-            # Revisar si especificó materia
-            materias_conocidas = ["python", "tesis", "programación", "programacion", "redes", "bases de datos", "cálculo", "calculo", "matemáticas", "matematicas", "inglés", "ingles", "química", "quimica"]
-            materia_encontrada = None
-            for m in materias_conocidas:
-                if m in lower:
-                    materia_encontrada = m.capitalize()
-                    break
-
-            if not materia_encontrada and len(text.split()) <= 4:
-                # Es vago (ej: "quiero estudiar", "tengo que estudiar") -> LA IA DEBE PREGUNTAR
-                return {
-                    "action": "question",
-                    "context_type": "study_topic",
-                    "question": "¿Qué materia o tema específico quieres estudiar?",
-                    "options": ["Python / Programación", "Tesis / Proyecto de Grado", "Lectura técnica", "Matemáticas"],
-                    "allow_custom": True,
-                    "custom_placeholder": "O escribe la materia o tema..."
-                }
-            else:
-                subject = materia_encontrada or text
-                return {
-                    "action": "micro_steps",
-                    "question": f"Desglose para estudiar {subject} con baja fricción:",
-                    "is_goal": True,
-                    "goal_title": f"Estudio: {subject}",
-                    "tasks": [
-                        {"title": f"{subject}: Revisión inicial o lectura corta (20 min)", "tag": "20 min", "task_type": "micro_step"},
-                        {"title": f"{subject}: Práctica enfocada de 1 módulo o función (30 min)", "tag": "30 min", "task_type": "micro_step"},
-                        {"title": f"{subject}: Síntesis de lo aprendido (15 min)", "tag": "15 min", "task_type": "micro_step"}
-                    ]
-                }
-
-        # 2. CASO CITA MÉDICA / REUNIÓN / TRÁMITE
-        palabras_cita = [
-            "cita", "médico", "medico", "dentista", "doctor", "doctora", 
-            "reunión", "reunion", "evaluación", "evaluacion", "certamen", "examen", "terapia"
-        ]
-        if any(w in lower for w in palabras_cita) or (detected_date and detected_date != now.strftime("%Y-%m-%d")):
-            if not detected_time:
-                # Falta la hora -> LA IA DEBE PREGUNTAR
-                target_str = detected_day_name or "la cita"
-                return {
-                    "action": "question",
-                    "context_type": "appointment_time",
-                    "question": f"¿A qué hora agendamos {text} ({target_str})?",
-                    "options": ["09:00", "11:30", "15:00", "17:00", "Sin hora fija"],
-                    "allow_custom": True,
-                    "custom_placeholder": "O escribe la hora exacta (ej: 14:15)...",
-                    "target_date": detected_date or now.strftime("%Y-%m-%d")
-                }
-            else:
-                tag_label = f"{detected_day_name or 'Agenda'} {detected_time}"
-                return {
-                    "action": "scheduled_task",
-                    "tasks": [
-                        {
-                            "title": text,
-                            "tag": tag_label,
-                            "scheduled_time": detected_time,
-                            "scheduled_date": detected_date or now.strftime("%Y-%m-%d"),
-                            "task_type": "appointment"
-                        }
-                    ]
-                }
-
-        # 3. CASO ENTREGA O INFORME SIN PLAZO
-        if any(w in lower for w in ["informe", "reporte", "entrega", "tarea"]):
-            if not detected_date and not detected_time:
-                return {
-                    "action": "question",
-                    "context_type": "deadline",
-                    "question": "¿Para cuándo necesitas tener listo este trabajo?",
-                    "options": ["Para hoy", "Para mañana", "Esta semana"],
-                    "allow_custom": True,
-                    "custom_placeholder": "O escribe la fecha límite..."
-                }
-
-        # 4. Tarea directa para hoy
-        return {
-            "action": "quick_task",
-            "tasks": [
-                {"title": text, "tag": "Hoy", "scheduled_time": None, "scheduled_date": None, "task_type": "quick"}
-            ]
         }

@@ -221,7 +221,7 @@
         <input 
           id="task-input" 
           type="text" 
-          placeholder="Escribe rápido lo que tienes en mente..."
+          placeholder="Escribe lo que tienes en mente (ej: quiero estudiar, doctor mañana)..."
           class="glass-input w-full rounded-2xl px-3.5 py-2.5 text-xs text-white placeholder-neutral-300 focus:outline-none transition pr-20"
         />
         <button 
@@ -233,8 +233,8 @@
       </form>
     </div>
 
-    <!-- PANEL DEL ASISTENTE AGENTE (Preguntas interactivas, botones y campo de texto libre) -->
-    <div id="ai-assistant-box" class="hidden mt-2.5 p-3 rounded-2xl bg-black/55 border border-white/[0.22] backdrop-blur-xl text-xs no-drag shadow-lg">
+    <!-- PANEL DEL ASISTENTE AGENTE (Conversación viva, opciones y entrada libre) -->
+    <div id="ai-assistant-box" class="hidden mt-2.5 p-3 rounded-2xl bg-black/60 border border-white/[0.22] backdrop-blur-xl text-xs no-drag shadow-2xl">
       <div id="ai-content"></div>
     </div>
 
@@ -263,7 +263,7 @@
       <div id="view-agenda" class="hidden flex-1 flex flex-col min-h-0">
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text">
-            <span>Compromisos, citas y entregas</span>
+            <span>Compromisos, citas y entregas programadas</span>
           </div>
           <span id="agenda-counter" class="text-[10px] font-mono text-neutral-300">0 citas</span>
         </div>
@@ -277,7 +277,7 @@
       <div id="view-goals" class="hidden flex-1 flex flex-col min-h-0">
         <div class="flex items-center justify-between pb-2">
           <div class="text-[11px] text-neutral-300 readable-text">
-            <span>Proyectos y objetivos desglosados</span>
+            <span>Proyectos y objetivos con micro-pasos</span>
           </div>
           <button onclick="showCreateGoalModal()" class="text-[10px] px-2 py-0.5 rounded-md bg-white/[0.08] hover:bg-white/[0.18] border border-white/[0.12] text-white transition readable-text">
             Nueva Meta
@@ -319,13 +319,24 @@
           </div>
 
           <!-- Clave de Gemini -->
-          <div class="space-y-1.5 p-3 rounded-2xl bg-white/[0.05] border border-white/[0.12]">
-            <label class="text-[11px] font-medium text-neutral-200 block">API Key de Google Gemini</label>
+          <div class="space-y-2 p-3.5 rounded-2xl bg-white/[0.05] border border-white/[0.12]">
+            <div class="flex items-center justify-between">
+              <label class="text-[11px] font-medium text-neutral-200">API Key de Google Gemini (2.5 Flash)</label>
+              <button 
+                type="button" 
+                onclick="openGoogleAIStudio()" 
+                class="text-[10px] text-neutral-300 hover:text-white underline"
+                title="Abre Google AI Studio en tu navegador"
+              >
+                Conseguir clave gratis &nearr;
+              </button>
+            </div>
+
             <div class="relative flex items-center">
               <input 
                 id="api-key-input" 
                 type="password" 
-                placeholder="Introduce tu API Key..."
+                placeholder="Pega aquí tu API Key de Gemini..."
                 class="glass-input w-full rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-400 focus:outline-none transition pr-16"
               />
               <button 
@@ -337,10 +348,12 @@
                 Ver
               </button>
             </div>
-            <div class="text-[10px] text-neutral-400 leading-normal mt-1">
-              Gemini 2.5 Flash interpreta intenciones y te guía activamente al anotar. Tu clave se almacena exclusivamente en tu base de datos local SQLite.
+            
+            <div class="text-[10px] text-neutral-300 leading-normal">
+              Al conectar Gemini 2.5 Flash, seeU razona en lenguaje natural, recuerda el diálogo de tus notas y te desglosa actividades a la medida. Tu clave no sale de tu equipo (se guarda en tu SQLite local).
             </div>
-            <div class="flex items-center gap-2 pt-1.5">
+
+            <div class="flex items-center gap-2 pt-1">
               <button 
                 type="button" 
                 onclick="saveApiKey()" 
@@ -408,7 +421,7 @@
     let currentView = 'focus';
     let allTasks = [];
     let allGoals = [];
-    let activeAIContext = null;
+    let pendingProposedTasks = null;
 
     // Fecha en español
     const now = new Date();
@@ -703,198 +716,241 @@
       const val = input.value.trim();
       if (!val) return;
 
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.process_ai(val).then(result => {
-          handleAIResult(val, result);
-        });
-      }
+      sendToAI(val);
+      input.value = '';
     });
 
-    // Manejo de la respuesta interactiva del Agente
-    function handleAIResult(originalText, result) {
+    function showAIThinking() {
       const aiBox = document.getElementById('ai-assistant-box');
       const aiContent = document.getElementById('ai-content');
+      aiBox.classList.remove('hidden');
+      aiContent.innerHTML = `
+        <div class="flex items-center gap-2 py-2 text-neutral-200">
+          <div class="w-2 h-2 rounded-full bg-white animate-pulse"></div>
+          <span class="text-xs readable-text">seeU está analizando y organizando...</span>
+        </div>
+      `;
+    }
 
-      if (result.action === 'question') {
-        activeAIContext = {
-          original_text: originalText,
-          context_type: result.context_type || 'general',
-          extra_data: { target_date: result.target_date || null }
+    function sendToAI(userText) {
+      showAIThinking();
+
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.process_ai(userText).then(result => {
+          renderAIConversation(result);
+        });
+      }
+    }
+
+    // Renderizado del diálogo activo con seeU
+    function renderAIConversation(result) {
+      const aiBox = document.getElementById('ai-assistant-box');
+      const aiContent = document.getElementById('ai-content');
+      aiBox.classList.remove('hidden');
+
+      const messageText = result.message || result.question || 'Propuesta de enfoque:';
+
+      // 1. Caso de tareas propuestas (micro-pasos o plan de sesión)
+      if (result.action === 'propose_tasks' || result.action === 'micro_steps') {
+        pendingProposedTasks = {
+          goal_title: result.goal_title || 'Objetivo seeU',
+          is_goal: result.is_goal !== false,
+          tasks: result.tasks || []
         };
 
-        aiBox.classList.remove('hidden');
-
-        let buttonsHtml = '';
-        (result.options || []).forEach(opt => {
-          buttonsHtml += `<button onclick="confirmOptionAnswer('${opt}')" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${opt}</button>`;
+        let stepsHtml = '';
+        (result.tasks || []).forEach(step => {
+          stepsHtml += `
+            <div class="flex items-center justify-between py-1 text-neutral-100 text-[11px] border-b border-white/[0.06] last:border-0 readable-text">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-white/80"></span>
+                <span class="truncate">${step.title}</span>
+              </div>
+              <span class="font-mono text-[9px] text-neutral-300 ml-2 bg-white/[0.1] px-1.5 py-0.5 rounded">${step.tag || 'Paso'}</span>
+            </div>
+          `;
         });
 
-        const customInputPlaceholder = result.custom_placeholder || 'O escribe tu respuesta aquí...';
+        aiContent.innerHTML = `
+          <div class="flex items-center justify-between pb-1.5 border-b border-white/[0.12]">
+            <span class="text-white font-semibold readable-text">seeU &bull; Plan Propuesto</span>
+            <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
+          </div>
+          
+          <div class="text-neutral-200 my-2 readable-text leading-relaxed text-xs">${messageText}</div>
+
+          <div class="space-y-1 my-2.5 p-2 rounded-xl bg-white/[0.04] border border-white/[0.08]">${stepsHtml}</div>
+
+          <div class="flex items-center gap-2 pt-1">
+            <button onclick="acceptProposedPlan()" class="flex-1 py-1.5 bg-white text-neutral-950 font-semibold rounded-xl hover:bg-neutral-100 text-xs transition shadow-sm">
+              Aceptar y Anotar
+            </button>
+            <button onclick="askForOtherPlan()" class="px-3 py-1.5 bg-white/[0.12] hover:bg-white/[0.2] text-white font-medium rounded-xl text-xs transition">
+              Pedir otra alternativa
+            </button>
+          </div>
+
+          <!-- Respuesta libre para negociar o cambiar -->
+          <div class="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-white/[0.08]">
+            <input 
+              id="ai-dialog-input" 
+              type="text" 
+              placeholder="O escribe para ajustar (ej: tengo menos tiempo, prefiero otra cosa)..." 
+              class="glass-input flex-1 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-400 focus:outline-none transition"
+              onkeydown="if(event.key==='Enter'){ event.preventDefault(); sendDialogReply(); }"
+            />
+            <button onclick="sendDialogReply()" class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition shadow">
+              Enviar
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      // 2. Caso de pregunta interactiva (pregunta de materia, hora o alternativas)
+      if (result.action === 'question') {
+        let buttonsHtml = '';
+        (result.options || []).forEach(opt => {
+          buttonsHtml += `<button onclick="sendToAI('${opt}')" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${opt}</button>`;
+        });
+
+        const customInputPlaceholder = result.custom_placeholder || 'Escribe tu respuesta aquí para ver qué propone seeU...';
 
         aiContent.innerHTML = `
-          <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
+          <div class="flex items-center justify-between pb-1.5 border-b border-white/[0.12]">
             <span class="text-white font-semibold readable-text">seeU &bull; Asistente</span>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
-          <div class="text-neutral-200 mt-1.5 readable-text font-medium">${result.question || '¿Puedes especificar más detalles?'}</div>
-          
-          <!-- Botones de opción rápida -->
-          <div class="flex flex-wrap gap-1.5 mt-2">${buttonsHtml}</div>
 
-          <!-- Campo de texto libre para cuando las opciones no sirvan -->
+          <div class="text-neutral-100 mt-2 readable-text leading-relaxed font-medium text-xs">${messageText}</div>
+
+          <!-- Opciones sugeridas -->
+          <div class="flex flex-wrap gap-1.5 mt-2.5">${buttonsHtml}</div>
+
+          <!-- Entrada libre editable -->
           <div class="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-white/[0.08]">
             <input 
-              id="ai-free-input" 
+              id="ai-dialog-input" 
               type="text" 
               placeholder="${customInputPlaceholder}" 
               class="glass-input flex-1 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-400 focus:outline-none transition"
-              onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitFreeAnswer(); }"
+              onkeydown="if(event.key==='Enter'){ event.preventDefault(); sendDialogReply(); }"
             />
-            <button 
-              type="button" 
-              onclick="submitFreeAnswer()" 
-              class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition shadow"
-            >
-              Confirmar
+            <button onclick="sendDialogReply()" class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition shadow">
+              Enviar
             </button>
           </div>
         `;
 
         setTimeout(() => {
-          const fi = document.getElementById('ai-free-input');
-          if (fi) fi.focus();
-        }, 80);
+          const di = document.getElementById('ai-dialog-input');
+          if (di) di.focus();
+        }, 60);
+        return;
+      }
 
-      } else if (result.action === 'micro_steps') {
-        aiBox.classList.remove('hidden');
-        let stepsHtml = '';
-        (result.tasks || []).forEach(step => {
-          stepsHtml += `
-            <div class="flex items-center gap-2 text-neutral-100 readable-text">
-              <span class="w-1.5 h-1.5 rounded-full bg-white/70"></span>
-              <span>${step.title}</span>
-            </div>
-          `;
-        });
-        window._pendingGoalData = {
-          title: result.goal_title || originalText,
-          tasks: result.tasks
-        };
+      // 3. Caso cita agendada
+      if (result.action === 'scheduled_task') {
+        const t = (result.tasks && result.tasks[0]);
+        if (t) {
+          createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, 'appointment');
+        }
         aiContent.innerHTML = `
           <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
-            <span class="text-white font-semibold readable-text">Desglose de Pasos Sugerido:</span>
+            <span class="text-white font-semibold readable-text">Cita Agendada</span>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
-          <div class="space-y-1.5 my-2.5 text-neutral-100 text-[11px]">${stepsHtml}</div>
-          <div class="flex items-center gap-2 pt-1">
-            <button onclick="confirmMicroStepsAsGoal()" class="flex-1 px-3 py-1.5 bg-white text-neutral-950 font-semibold rounded-xl hover:bg-neutral-100 text-[11px] transition shadow-sm">
-              Crear Meta con estos pasos
-            </button>
-            <button onclick="confirmMicroStepsToFocus()" class="px-3 py-1.5 bg-white/[0.15] hover:bg-white/[0.25] text-white font-medium rounded-xl text-[11px] transition">
-              Solo al Foco
+          <div class="text-neutral-200 mt-1.5 text-xs">${messageText}</div>
+          <div class="mt-2 flex justify-end">
+            <button onclick="dismissAIBound(); switchView('agenda');" class="px-3 py-1 bg-white text-neutral-950 font-semibold rounded-lg text-xs hover:bg-neutral-100 transition shadow">
+              Ver en Agenda
             </button>
           </div>
         `;
-      } else if (result.action === 'scheduled_task') {
-        const t = (result.tasks && result.tasks[0]) || { title: originalText, tag: 'Agenda' };
-        createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, 'appointment');
-        document.getElementById('task-input').value = '';
-        dismissAIBound();
-        switchView('agenda');
-      } else {
-        const t = (result.tasks && result.tasks[0]) || { title: originalText, tag: 'Hoy' };
-        createTaskInDB(t.title, t.tag, t.scheduled_time, t.scheduled_date, t.task_type || 'quick');
-        document.getElementById('task-input').value = '';
-        dismissAIBound();
-        if (currentView !== 'focus') switchView('focus');
+        return;
+      }
+
+      // 4. Caso tarea rápida directa
+      if (result.action === 'quick_task') {
+        const t = (result.tasks && result.tasks[0]);
+        if (t) {
+          createTaskInDB(t.title, t.tag, null, null, 'quick');
+        }
+        aiContent.innerHTML = `
+          <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
+            <span class="text-white font-semibold readable-text">Tarea Guardada</span>
+            <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
+          </div>
+          <div class="text-neutral-200 mt-1.5 text-xs">${messageText}</div>
+          <div class="mt-2 flex justify-end">
+            <button onclick="dismissAIBound(); switchView('focus');" class="px-3 py-1 bg-white text-neutral-950 font-semibold rounded-lg text-xs hover:bg-neutral-100 transition shadow">
+              Ver en Foco
+            </button>
+          </div>
+        `;
+        return;
       }
     }
 
-    function confirmOptionAnswer(optionText) {
-      if (!activeAIContext || !window.pywebview || !window.pywebview.api) return;
-
-      window.pywebview.api.process_ai_followup(
-        activeAIContext.original_text,
-        optionText,
-        activeAIContext.context_type,
-        activeAIContext.extra_data
-      ).then(res => {
-        handleAIResult(activeAIContext.original_text, res);
-      });
-    }
-
-    function submitFreeAnswer() {
-      const input = document.getElementById('ai-free-input');
+    function sendDialogReply() {
+      const input = document.getElementById('ai-dialog-input');
       if (!input) return;
       const val = input.value.trim();
       if (!val) return;
-
-      if (!activeAIContext || !window.pywebview || !window.pywebview.api) return;
-
-      window.pywebview.api.process_ai_followup(
-        activeAIContext.original_text,
-        val,
-        activeAIContext.context_type,
-        activeAIContext.extra_data
-      ).then(res => {
-        handleAIResult(activeAIContext.original_text, res);
-      });
+      sendToAI(val);
     }
 
-    function dismissAIBound() {
-      document.getElementById('ai-assistant-box').classList.add('hidden');
-      activeAIContext = null;
+    function askForOtherPlan() {
+      sendToAI('no quiero esas actividades, sugiéreme algo distinto o más corto');
     }
 
-    function confirmMicroStepsAsGoal() {
-      if (window._pendingGoalData && window.pywebview && window.pywebview.api) {
-        window.pywebview.api.create_goal(window._pendingGoalData.title, '', 'estudio').then(newG => {
-          const promises = window._pendingGoalData.tasks.map(st => {
+    function acceptProposedPlan() {
+      if (!pendingProposedTasks) return;
+
+      if (pendingProposedTasks.is_goal && window.pywebview && window.pywebview.api) {
+        window.pywebview.api.create_goal(pendingProposedTasks.goal_title, '', 'estudio').then(newG => {
+          const promises = pendingProposedTasks.tasks.map(st => {
             return window.pywebview.api.add_step_to_goal(newG.id, st.title, st.tag || '20 min');
           });
           Promise.all(promises).then(() => {
             dismissAIBound();
-            document.getElementById('task-input').value = '';
             fetchData();
             switchView('goals');
           });
         });
-      }
-    }
-
-    function confirmMicroStepsToFocus() {
-      if (window._pendingGoalData && window._pendingGoalData.tasks) {
-        window._pendingGoalData.tasks.forEach(st => {
+      } else {
+        pendingProposedTasks.tasks.forEach(st => {
           createTaskInDB(st.title, st.tag || 'Paso', null, null, 'micro_step');
         });
+        dismissAIBound();
+        switchView('focus');
       }
-      dismissAIBound();
-      document.getElementById('task-input').value = '';
-      switchView('focus');
     }
 
-    // Función Anti-ansiedad: Despejar foco
+    function dismissAIBound() {
+      document.getElementById('ai-assistant-box').classList.add('hidden');
+      pendingProposedTasks = null;
+    }
+
+    // Anti-ansiedad: Despejar foco
     function runTriageFocus() {
       if (!window.pywebview || !window.pywebview.api) return;
 
-      const aiBox = document.getElementById('ai-assistant-box');
-      const aiContent = document.getElementById('ai-content');
-      aiBox.classList.remove('hidden');
-
-      aiContent.innerHTML = `
-        <div class="text-white font-semibold readable-text">Analizando tu carga mental...</div>
-        <div class="text-neutral-300 mt-1 readable-text">El agente está seleccionando solo 2 tareas esenciales para hoy para calmar la sobrecarga.</div>
-      `;
+      showAIThinking();
 
       window.pywebview.api.triage_focus().then(res => {
+        const aiBox = document.getElementById('ai-assistant-box');
+        const aiContent = document.getElementById('ai-content');
+        aiBox.classList.remove('hidden');
+
         aiContent.innerHTML = `
-          <div class="flex items-center justify-between pb-1 border-b border-white/[0.1]">
-            <span class="text-white font-semibold readable-text">Despejar Foco:</span>
+          <div class="flex items-center justify-between pb-1.5 border-b border-white/[0.12]">
+            <span class="text-white font-semibold readable-text">Despejar Foco (Anti-Sobrecarga)</span>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
-          <div class="text-neutral-200 mt-1.5 readable-text leading-relaxed">${res.message}</div>
-          <div class="mt-2.5 flex justify-end">
-            <button onclick="dismissAIBound()" class="px-3 py-1 bg-white text-neutral-950 rounded-lg text-xs font-semibold hover:bg-neutral-100 transition shadow">
+          <div class="text-neutral-200 mt-2 readable-text leading-relaxed text-xs">${res.message}</div>
+          <div class="mt-3 flex justify-end">
+            <button onclick="dismissAIBound()" class="px-3 py-1 bg-white text-neutral-950 rounded-xl text-xs font-semibold hover:bg-neutral-100 transition shadow">
               Comenzar con calma
             </button>
           </div>
@@ -933,6 +989,14 @@
     }
 
     // Configuración y API Key
+    function openGoogleAIStudio() {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.open_external_url('https://aistudio.google.com/app/apikey');
+      } else {
+        window.open('https://aistudio.google.com/app/apikey', '_blank');
+      }
+    }
+
     function togglePasswordVisibility() {
       const input = document.getElementById('api-key-input');
       const btn = document.getElementById('toggle-vis-btn');
@@ -950,18 +1014,18 @@
       const val = input.value.trim();
       const msg = document.getElementById('test-result-msg');
       if (!val) {
-        msg.textContent = 'Escribe una clave antes de guardar.';
+        msg.textContent = 'Escribe o pega una clave antes de guardar.';
         msg.className = 'text-[11px] font-medium mt-1 text-amber-300';
         return;
       }
 
-      msg.textContent = 'Guardando y verificando...';
+      msg.textContent = 'Verificando con Gemini 2.5 Flash...';
       msg.className = 'text-[11px] font-medium mt-1 text-neutral-300';
 
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.save_api_key(val).then(res => {
           if (res.status === 'ok') {
-            msg.textContent = 'Clave guardada y conectada con éxito.';
+            msg.textContent = 'Conectado a Gemini 2.5 Flash con éxito.';
             msg.className = 'text-[11px] font-medium mt-1 text-emerald-400';
             input.value = '';
             input.placeholder = '••••••••';
@@ -1008,7 +1072,7 @@
       }
     }
 
-    // Control de Micro-Orbe y Redimensionamiento
+    // Control de Micro-Orbe
     function minimizeToOrb() {
       document.body.classList.add('orb-mode');
       document.getElementById('full-window').classList.add('hidden');
@@ -1027,7 +1091,7 @@
       }
     }
 
-    // Umbral estricto de Arrastre vs Clic del Orbe
+    // Umbral de Arrastre vs Clic del Orbe
     let orbMouseDownTime = 0;
     let orbStartX = 0;
     let orbStartY = 0;
@@ -1059,7 +1123,6 @@
 
     orbEl.addEventListener('click', (e) => {
       const duration = Date.now() - orbMouseDownTime;
-      // Si se movió o se mantuvo presionado como arrastre, suprimir apertura
       if (orbDidDrag || duration > 260) {
         e.stopPropagation();
         e.preventDefault();

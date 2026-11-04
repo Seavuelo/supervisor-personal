@@ -87,6 +87,10 @@ class seeU_API:
     def test_connection(self):
         return self.ai_service.test_connection()
 
+    def open_external_url(self, url):
+        import webbrowser
+        webbrowser.open(url)
+
     # --- Geometría y Control de Ventana ---
     def minimize_to_orb(self):
         if not self.window:
