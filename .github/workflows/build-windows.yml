@@ -7,10 +7,15 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: Compilar seeU.exe e Instalador Setup
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Descargar codigo fuente
@@ -50,3 +55,27 @@ jobs:
             dist-installer/seeU-Setup-x64.exe
             dist-installer/seeU-Windows-Portable.zip
           retention-days: 30
+
+      - name: Publicar Release Oficial en GitHub
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: seeU ${{ github.ref_name }} - Lanzamiento Oficial
+          files: |
+            dist-installer/seeU-Setup-x64.exe
+            dist-installer/seeU-Windows-Portable.zip
+          body: |
+            ## seeU - Supervisor Personal y Micro-Orbe Etereo
+
+            Lanzamiento oficial empaquetado para Windows x64.
+
+            ### Archivos para descarga
+            - **seeU-Setup-x64.exe**: Instalador visual guiado con accesos directos, icono oficial y desinstalador.
+            - **seeU-Windows-Portable.zip**: Paquete portable para descomprimir y ejecutar de inmediato sin instalacion.
+
+            ### Aspectos destacados de la entrega
+            - Diseno Liquid Glass con soporte de desenfoque de hardware Acrylic nativo en Windows 11 y Windows 10.
+            - Cuadro de confirmacion al cerrar para evitar interrupciones o salidas accidentales.
+            - Ecosistema para agentes de inteligencia artificial mediante CLI (seeu) y servidor MCP nativo stdio.
+            - Inicio silencioso sin ventanas de consola CMD residuales.
+
