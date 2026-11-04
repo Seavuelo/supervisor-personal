@@ -141,15 +141,30 @@ class seeU_API:
         target = self._get_autostart_file_path()
         if enable:
             target.parent.mkdir(parents=True, exist_ok=True)
-            python_bin = sys.executable
-            main_script = Path(__file__).resolve().parent.parent / "main.py"
-            if sys.platform == "win32":
-                # En Windows usamos pythonw si está disponible para evitar la consola negra
-                pythonw_bin = python_bin.replace("python.exe", "pythonw.exe")
-                exe = pythonw_bin if os.path.exists(pythonw_bin) else python_bin
-                content = f'@echo off\nstart "" "{exe}" "{main_script}"\n'
+            if getattr(sys, 'frozen', False):
+                exe = sys.executable
+                if sys.platform == "win32":
+                    content = f'@echo off\nstart "" "{exe}"\n'
+                else:
+                    content = f"""[Desktop Entry]
+Type=Application
+Name=seeU
+Comment=Supervisor personal de tareas y agenda
+Exec="{exe}"
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+"""
             else:
-                content = f"""[Desktop Entry]
+                python_bin = sys.executable
+                main_script = Path(__file__).resolve().parent.parent / "main.py"
+                if sys.platform == "win32":
+                    # En Windows usamos pythonw si está disponible para evitar la consola negra
+                    pythonw_bin = python_bin.replace("python.exe", "pythonw.exe")
+                    exe = pythonw_bin if os.path.exists(pythonw_bin) else python_bin
+                    content = f'@echo off\nstart "" "{exe}" "{main_script}"\n'
+                else:
+                    content = f"""[Desktop Entry]
 Type=Application
 Name=seeU
 Comment=Supervisor personal de tareas y agenda
@@ -404,7 +419,7 @@ def start_ui():
         easy_drag=True,
         transparent=True,
         on_top=True,
-        background_color=None
+        background_color='#000000'
     )
 
     api.set_window(window)

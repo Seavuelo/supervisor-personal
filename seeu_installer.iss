@@ -2,7 +2,7 @@
 ; Genera un instalador profesional con asistente grafico (.exe) para Windows
 
 #define MyAppName "seeU"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Seavuelo"
 #define MyAppURL "https://github.com/Seavuelo/supervisor-personal"
 #define MyAppExeName "seeU.exe"
