@@ -35,13 +35,12 @@ def _ensure_default_desktop():
 
 _ensure_default_desktop()
 
-def apply_window_blur(hwnd: int):
+def disable_window_blur(hwnd: int):
     """
-    Aplica desenfoque real (blur / acrylic) de fondo en Windows.
-    Soporta:
-      - Windows 11: DWMWA_SYSTEMBACKDROP_TYPE (Acrylic nativo) + Dark Mode
-      - Windows 10: SetWindowCompositionAttribute (Accent BlurBehind fluido sin lag de arrastre)
-      - Fallback: DwmEnableBlurBehindWindow
+    Desactiva cualquier política de desenfoque rectangular DWM a nivel de HWND en Windows.
+    Esto garantiza transparencia pura por píxel (WA_TranslucentBackground) para que
+    el micro-orbe sea un círculo perfecto sin recuadro y seeU no tenga bordes cuadrados
+    alrededor de sus esquinas redondeadas.
     """
     if sys.platform != "win32" or not hwnd:
         return
@@ -49,23 +48,7 @@ def apply_window_blur(hwnd: int):
     import ctypes
     from ctypes import c_int, c_uint, POINTER, Structure, sizeof, byref
 
-    # 1. Intentar API moderna de Windows 11 (Build >= 22000)
-    try:
-        dwm = ctypes.windll.dwmapi
-        # Activar modo oscuro para DWM
-        dark_mode = c_int(1)
-        dwm.DwmSetWindowAttribute(hwnd, 20, byref(dark_mode), sizeof(dark_mode))
-
-        # DWMWA_SYSTEMBACKDROP_TYPE = 38
-        # DWMSBT_TRANSIENTWINDOW = 3 (Acrylic nativo)
-        backdrop_type = c_int(3)
-        res = dwm.DwmSetWindowAttribute(hwnd, 38, byref(backdrop_type), sizeof(backdrop_type))
-        if res == 0:
-            return
-    except Exception:
-        pass
-
-    # 2. Windows 10: SetWindowCompositionAttribute
+    # 1. Desactivar AccentPolicy de Windows 10 (ACCENT_DISABLED = 0)
     try:
         class ACCENT_POLICY(Structure):
             _fields_ = [
@@ -83,8 +66,7 @@ def apply_window_blur(hwnd: int):
             ]
 
         policy = ACCENT_POLICY()
-        # AccentState: 3 = ACCENT_ENABLE_BLURBEHIND (Desenfoque DWM fluido y acelerado por hardware sin lag)
-        policy.AccentState = 3
+        policy.AccentState = 0  # ACCENT_DISABLED
         policy.AccentFlags = 0
         policy.GradientColor = 0
         policy.AnimationId = 0
@@ -93,14 +75,11 @@ def apply_window_blur(hwnd: int):
         data.Attribute = 19  # WCA_ACCENT_POLICY
         data.Data = ctypes.pointer(policy)
         data.SizeOfData = sizeof(policy)
-
-        res = ctypes.windll.user32.SetWindowCompositionAttribute(hwnd, byref(data))
-        if res:
-            return
+        ctypes.windll.user32.SetWindowCompositionAttribute(hwnd, byref(data))
     except Exception:
         pass
 
-    # 3. Fallback: DwmEnableBlurBehindWindow clásico
+    # 2. Desactivar DwmEnableBlurBehindWindow clásico
     try:
         class DWM_BLURBEHIND(Structure):
             _fields_ = [
@@ -112,12 +91,22 @@ def apply_window_blur(hwnd: int):
 
         bb = DWM_BLURBEHIND()
         bb.dwFlags = 1  # DWM_BB_ENABLE
-        bb.fEnable = 1
+        bb.fEnable = 0  # Desactivar para que sea transparencia alfa pura
         bb.hRgnBlur = 0
         bb.fTransitionOnMaximized = 0
         ctypes.windll.dwmapi.DwmEnableBlurBehindWindow(hwnd, byref(bb))
     except Exception:
         pass
+
+    # 3. Desactivar DWMWA_SYSTEMBACKDROP_TYPE en Windows 11
+    try:
+        dwm = ctypes.windll.dwmapi
+        backdrop_type = c_int(1)  # DWMSBT_NONE = 1
+        dwm.DwmSetWindowAttribute(hwnd, 38, byref(backdrop_type), sizeof(backdrop_type))
+    except Exception:
+        pass
+
+apply_window_blur = disable_window_blur
 
 class seeU_API:
     def __init__(self):
@@ -792,7 +781,7 @@ def start_ui():
         easy_drag=False,
         transparent=True,
         on_top=is_on_top,
-        background_color='#000000'
+        background_color='#00000000'
     )
 
     api.set_window(window)
