@@ -574,6 +574,7 @@ def _run_in_gui(fn):
         return
     if _qt_invoker is None:
         _qt_invoker = _QtInvoker()
+        _qt_invoker.moveToThread(app.thread())
     QtCore.QCoreApplication.postEvent(_qt_invoker, _QtFnEvent(fn))
 
 def _safe_run_js(q_win, script: str):
@@ -704,11 +705,7 @@ def start_ui():
     api.set_window(window)
 
     def on_app_started():
-        # Esperar a que la ventana esté lista antes de configurar el tray y el desenfoque
-        try:
-            window.events.shown.wait(5.0)
-        except Exception:
-            pass
+        time.sleep(0.1)
         _setup_system_tray_and_tool_window(window, api)
 
     webview.start(on_app_started, gui="qt", debug=False)
