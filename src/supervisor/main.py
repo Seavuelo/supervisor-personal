@@ -10,6 +10,17 @@ from supervisor.database.schema import create_tables
 from supervisor.ui.main_window import start_ui
 
 def main():
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            GENERIC_ALL = 0x10000000
+            hdesk = user32.OpenDesktopW("Default", 0, False, GENERIC_ALL)
+            if hdesk:
+                user32.SetThreadDesktop(hdesk)
+        except Exception:
+            pass
+
     # Inicializar tablas de SQLite si no existen
     create_tables()
 

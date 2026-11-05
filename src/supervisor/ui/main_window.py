@@ -20,6 +20,21 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+def _ensure_default_desktop():
+    """Garantiza que el hilo actual de Windows esté vinculado al escritorio interactivo 'Default'."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            GENERIC_ALL = 0x10000000
+            hdesk = user32.OpenDesktopW("Default", 0, False, GENERIC_ALL)
+            if hdesk:
+                user32.SetThreadDesktop(hdesk)
+        except Exception:
+            pass
+
+_ensure_default_desktop()
+
 def apply_window_blur(hwnd: int):
     """
     Aplica desenfoque real (blur / acrylic) de fondo en Windows.
@@ -310,6 +325,7 @@ X-GNOME-Autostart-enabled=true
 
         def _do_hide():
             try:
+                from PyQt6.QtWidgets import QSystemTrayIcon
                 from webview.platforms.qt import BrowserView
                 q_win = BrowserView.instances.get(self.window.uid)
                 if q_win:
@@ -320,6 +336,17 @@ X-GNOME-Autostart-enabled=true
                         settings_repository.set_setting("window_y", self.window_y)
                     self.current_display_mode = "tray"
                     q_win.hide()
+                    tray = getattr(q_win, '_tray_icon', None) or getattr(self, '_tray_icon', None)
+                    if tray:
+                        try:
+                            tray.showMessage(
+                                "seeU • En segundo plano",
+                                "seeU sigue activo en la bandeja del sistema. Haz clic aquí o en su icono para volver a abrirlo.",
+                                QSystemTrayIcon.MessageIcon.Information,
+                                3000
+                            )
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"[seeU] Error en minimize_to_tray: {e}")
 
@@ -569,6 +596,7 @@ _qt_invoker = None
 
 def _run_in_gui(fn):
     global _qt_invoker
+    _ensure_default_desktop()
     app = QtCore.QCoreApplication.instance()
     if not app:
         return
@@ -591,6 +619,7 @@ def _setup_system_tray_and_tool_window(window, api):
     """Configura el icono en la bandeja del sistema y garantiza la transparencia real y desenfoque en Windows y Linux."""
     def _apply_in_gui():
         try:
+            _ensure_default_desktop()
             from PyQt6 import QtCore
             from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
             from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
@@ -598,6 +627,8 @@ def _setup_system_tray_and_tool_window(window, api):
 
             q_win = BrowserView.instances.get(window.uid)
             q_app = QApplication.instance()
+            if q_app:
+                q_app.setQuitOnLastWindowClosed(False)
 
             icon_file = Path(__file__).resolve().parent / "assets" / "icon.png"
 
@@ -631,8 +662,7 @@ def _setup_system_tray_and_tool_window(window, api):
             if q_app and QSystemTrayIcon.isSystemTrayAvailable():
                 # Icono de la bandeja del sistema
                 if icon_file.exists():
-                    tray_pix = QPixmap(str(icon_file)).scaled(24, 24, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
-                    tray_icon = QSystemTrayIcon(QIcon(tray_pix), q_app)
+                    tray_icon = QSystemTrayIcon(QIcon(str(icon_file)), q_app)
                 else:
                     pix = QPixmap(24, 24)
                     pix.fill(QtCore.Qt.GlobalColor.transparent)
@@ -670,15 +700,22 @@ def _setup_system_tray_and_tool_window(window, api):
                             _safe_run_js(q_win, "requestMinimize();")
 
                 tray_icon.activated.connect(on_tray_activated)
+                tray_icon.messageClicked.connect(lambda: api.restore_from_tray())
                 tray_icon.setContextMenu(menu)
+                tray_icon.setVisible(True)
                 tray_icon.show()
-                q_win._tray_icon = tray_icon
+                if q_win:
+                    q_win._tray_icon = tray_icon
+                    q_win._tray_menu = menu
+                api._tray_icon = tray_icon
+                api._tray_menu = menu
         except Exception as e:
             print(f"[seeU] System Tray no disponible: {e}")
 
     _run_in_gui(_apply_in_gui)
 
 def start_ui():
+    _ensure_default_desktop()
     current_dir = Path(__file__).resolve().parent
     html_file = current_dir / "index.html"
 
@@ -705,7 +742,12 @@ def start_ui():
     api.set_window(window)
 
     def on_app_started():
-        time.sleep(0.1)
+        _ensure_default_desktop()
+        from webview.platforms.qt import BrowserView
+        for _ in range(30):
+            if BrowserView.instances.get(window.uid):
+                break
+            time.sleep(0.1)
         _setup_system_tray_and_tool_window(window, api)
 
     webview.start(on_app_started, gui="qt", debug=False)
