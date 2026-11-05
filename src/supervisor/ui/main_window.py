@@ -781,7 +781,7 @@ def start_ui():
         easy_drag=False,
         transparent=True,
         on_top=is_on_top,
-        background_color='#00000000'
+        background_color='#000000'
     )
 
     api.set_window(window)
