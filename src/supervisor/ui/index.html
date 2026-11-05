@@ -943,27 +943,81 @@
       }
     }
 
+    function getTodayDateStr() {
+      const todayItem = weeklyHeatmapData.find(d => d.is_today);
+      if (todayItem && todayItem.date) return todayItem.date;
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
     function updateCounters() {
-      const pendingFocus = allTasks.filter(t => t.status === 'pendiente' && !t.goal_id).length;
+      const todayStr = getTodayDateStr();
+
+      // Foco: tareas de hoy que no son citas de agenda ni metas
+      const pendingFocus = allTasks.filter(t => {
+        if (t.status !== 'pendiente' || t.goal_id) return false;
+        if (t.task_type === 'appointment') return false;
+        if (t.recurrence === 'monthly' || t.recurrence === 'weekly') return false;
+        if (t.recurrence === 'daily' || t.task_type === 'daily') return true;
+        if (!t.scheduled_date || t.scheduled_date <= todayStr) return true;
+        return false;
+      }).length;
+
       document.getElementById('focus-counter').textContent = `${pendingFocus} pendiente${pendingFocus === 1 ? '' : 's'}`;
       document.getElementById('orb-count').textContent = pendingFocus;
 
-      const agendaTasks = allTasks.filter(t => t.scheduled_time || t.scheduled_date || t.task_type === 'appointment');
-      document.getElementById('agenda-counter').textContent = `${agendaTasks.length} cita${agendaTasks.length === 1 ? '' : 's'}`;
+      // Agenda: recordatorios, citas y compromisos fechados
+      const agendaCount = allTasks.filter(t => {
+        if (t.goal_id) return false;
+        if ((t.recurrence === 'daily' || t.task_type === 'daily') && t.task_type !== 'appointment') return false;
+        if (t.task_type === 'appointment' || t.recurrence === 'monthly' || t.recurrence === 'weekly' || t.scheduled_time) return true;
+        if (t.scheduled_date && t.scheduled_date > todayStr) return true;
+        return false;
+      }).length;
+
+      document.getElementById('agenda-counter').textContent = `${agendaCount} recordatorio${agendaCount === 1 ? '' : 's'}`;
     }
 
     // Renderizado: Foco de Hoy y Tareas por Día
     function renderFocusTasks() {
       const container = document.getElementById('focus-list');
       container.innerHTML = '';
+      const todayStr = getTodayDateStr();
 
-      let list = allTasks.filter(t => !t.goal_id);
+      let list = allTasks.filter(t => {
+        // Excluir metas (viven en la sección Metas)
+        if (t.goal_id) return false;
+
+        // Excluir citas de agenda y recordatorios recurrentes (viven en Agenda)
+        if (t.task_type === 'appointment') return false;
+        if (t.recurrence === 'monthly' || t.recurrence === 'weekly') return false;
+
+        // Filtro de día seleccionado del calendario
+        if (selectedDayFilter) {
+          return t.scheduled_date === selectedDayFilter || t.recurrence === 'daily';
+        }
+
+        // Foco de Hoy por defecto:
+        // Hábitos diarios
+        if (t.recurrence === 'daily' || t.task_type === 'daily') return true;
+
+        // Tareas rápidas sin fecha fija (para hacer hoy)
+        if (!t.scheduled_date) return true;
+
+        // Tareas programadas para hoy o atrasadas (para resolver hoy)
+        if (t.scheduled_date <= todayStr) return true;
+
+        // Tareas futuras: no ensuciar el Foco de Hoy
+        return false;
+      });
 
       // Filtro de día seleccionado del calendario
       const filterBanner = document.getElementById('active-day-filter-banner');
       if (selectedDayFilter) {
         filterBanner.classList.remove('hidden');
-        list = list.filter(t => t.scheduled_date === selectedDayFilter || t.recurrence === 'daily');
       } else {
         filterBanner.classList.add('hidden');
       }
@@ -1091,8 +1145,29 @@
     function renderAgendaTasks() {
       const container = document.getElementById('agenda-list');
       container.innerHTML = '';
+      const todayStr = getTodayDateStr();
 
-      let agendaTasks = allTasks.filter(t => t.scheduled_time || t.scheduled_date || t.task_type === 'appointment');
+      let agendaTasks = allTasks.filter(t => {
+        // Excluir metas
+        if (t.goal_id) return false;
+
+        // Excluir hábitos diarios puros (pertenecen a Foco)
+        if ((t.recurrence === 'daily' || t.task_type === 'daily') && t.task_type !== 'appointment') return false;
+
+        // Citas y compromisos de agenda
+        if (t.task_type === 'appointment') return true;
+
+        // Compromisos recurrentes de agenda (mensuales, semanales)
+        if (t.recurrence === 'monthly' || t.recurrence === 'weekly') return true;
+
+        // Compromisos con hora específica
+        if (t.scheduled_time) return true;
+
+        // Fechas futuras
+        if (t.scheduled_date && t.scheduled_date > todayStr) return true;
+
+        return false;
+      });
 
       if (hideCompletedTasks) {
         agendaTasks = agendaTasks.filter(t => t.status !== 'completada');
@@ -1101,7 +1176,7 @@
       if (agendaTasks.length === 0) {
         container.innerHTML = `
           <div class="text-center py-10 text-neutral-300 text-xs font-normal readable-text">
-            No hay citas agendadas.<br/><span class="text-[11px] text-neutral-400">Escribe algo como "martes dentista a las 11" para agendar.</span>
+            No hay recordatorios ni citas agendadas.<br/><span class="text-[11px] text-neutral-400">Escribe algo como "martes dentista a las 11" o "el 19 cumplemes" para agendar.</span>
           </div>
         `;
         return;
@@ -1110,6 +1185,10 @@
       agendaTasks.forEach(task => {
         const isCompleted = task.status === 'completada';
         const isPriority = !!task.is_priority;
+        const isMonthly = task.recurrence === 'monthly';
+        const isWeekly = task.recurrence === 'weekly';
+        const tagLabel = isMonthly ? (task.tag || 'Mensual') : (isWeekly ? (task.tag || 'Semanal') : (task.tag || 'Cita'));
+
         const div = document.createElement('div');
         div.className = `glass-tile group flex items-start gap-2.5 p-3 rounded-2xl ${isCompleted ? 'completed-task' : ''}`;
         div.innerHTML = `
@@ -1123,6 +1202,7 @@
             <div class="text-[10px] text-neutral-300 mt-0.5 readable-text flex items-center gap-2">
               ${task.scheduled_date ? `<span>${task.scheduled_date}</span>` : ''}
               ${task.scheduled_time ? `<span class="font-mono bg-white/[0.1] px-1.5 py-0.2 rounded">${task.scheduled_time}</span>` : ''}
+              ${isMonthly ? `<span class="text-neutral-400 text-[9px]">(Todos los meses)</span>` : ''}
             </div>
           </div>
           <button onclick="togglePriority(${task.id})" class="star-btn mt-0.5 p-1 text-white opacity-80 hover:opacity-100">
@@ -1130,7 +1210,7 @@
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
             </svg>
           </button>
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${task.tag || 'Cita'}</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${tagLabel}</span>
           <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
         `;
         container.appendChild(div);

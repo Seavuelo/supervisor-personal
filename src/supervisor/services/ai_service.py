@@ -175,15 +175,18 @@ REGLAS DE CLASIFICACIÓN INTELIGENTE (El usuario puede escribir desde cualquier 
    - Devuelve action: "create_goal", goal_title: "...", category: "estudio" | "salud" | "finanzas" | "trabajo" | "personal", y en tasks incluye 3 pasos iniciales concretos de baja fricción para comenzar.
    - O si el usuario pide ayuda para desglosar algo o necesita estructuración, usa action: "propose_tasks" con is_goal: true y los micro-pasos.
 
-2. DESTINO AGENDA (action: "scheduled_task" o "question"):
-   - Aplica si el texto contiene una fecha futura específica ("mañana", "el 19", "martes", "el próximo viernes", "el 12 de noviembre"), una hora ("a las 8 am", "15:30"), o un compromiso/cita médica/dentista/reunión/celebración/cumpleaños/aniversario/evento.
-   - Devuelve action: "scheduled_task", scheduled_date en formato YYYY-MM-DD, scheduled_time en formato HH:MM (si se indicó), task_type: "appointment", tag con la fecha y hora legible.
-   - Si es una cita médica o reunión donde la hora exacta es fundamental pero no se dio, devuelve action: "question" preguntando amablemente a qué hora está programada.
+2. DESTINO AGENDA (action: "scheduled_task" o "question", destination: "agenda"):
+   - Aplica para citas médicas (dentista, doctor), reuniones, compromisos con hora o fecha específica, fechas importantes, celebraciones o recordatorios periódicos ("el 19 de cada mes por mi cumplemes", "dentista martes a las 8 am", "mañana doctor", "reunión viernes 15:00", "cumpleaños").
+   - IMPORTANTE: Las citas, recordatorios y celebraciones pertenecen EXCLUSIVAMENTE a la Agenda. NO son tareas de Foco diario para hacer ticks.
+   - Si es un recordatorio recurrente mensual (ej: "de cada mes", "todos los 19", "mensualmente"), asigna recurrence: "monthly".
+   - Devuelve action: "scheduled_task", destination: "agenda", scheduled_date en formato YYYY-MM-DD, scheduled_time en formato HH:MM (o null), task_type: "appointment", recurrence: "monthly" | "weekly" | "none", tag con la fecha/hora legible.
+   - Si es una cita médica o reunión donde la hora exacta es fundamental pero no se dio, devuelve action: "question" con destination: "agenda" preguntando a qué hora está programada.
 
-3. DESTINO FOCO (action: "quick_task"):
-   - Aplica para tareas cotidianas, inmediatas o pendientes del día actual sin fecha futura ("comprar pan", "llamar a Carlos", "terminar el informe hoy", "revisar correos", "hacer ejercicio hoy").
-   - También hábitos que se repiten a diario ("tomar agua todos los días") con task_type: "daily" y recurrence: "daily".
-   - Devuelve action: "quick_task", scheduled_date: null o fecha de hoy, tag: "Hoy" (o "Diaria").
+3. DESTINO FOCO (action: "quick_task", destination: "focus"):
+   - Aplica para actividades rápidas del día a día, to-dos de hoy o hábitos cotidianos de tick diario ("comprar pan", "llamar a Carlos", "terminar el informe hoy", "hacer ejercicio todos los días").
+   - IMPORTANTE: Viven EXCLUSIVAMENTE en Foco de Hoy. NO aparecen en Agenda.
+   - Si es un hábito repetitivo diario ("todos los días"), asigna task_type: "daily" y recurrence: "daily".
+   - Devuelve action: "quick_task", destination: "focus", scheduled_date: null o fecha de hoy, tag: "Hoy" (o "Diaria").
 
 4. RESPUESTA A RECHAZOS O DUDAS:
    - Si el usuario dice que no quiere algo o pide otra alternativa, usa action: "question" para reconducir con serenidad.
@@ -442,6 +445,42 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         
         detected_date = None
         detected_day_name = None
+
+        # 5.A Recordatorios recurrentes mensuales (ej: "el 19 de cada mes", "cumplemes todos los 19", "fecha 19 de cada mes")
+        is_monthly = bool(re.search(r"\b(de\s+cada\s+mes|todos\s+los\s+meses|cada\s+mes|mensual(?:mente)?)\b", lower))
+        month_day_match = re.search(r"\b(?:el\s+|fecha\s+|los\s+|d[ií]a\s+)?(\d{1,2})\b", lower)
+        if is_monthly and month_day_match:
+            day_num = int(month_day_match.group(1))
+            m_target = now.month if day_num >= now.day else (now.month % 12 + 1)
+            y_target = now.year if day_num >= now.day or now.month < 12 else now.year + 1
+            try:
+                target_dt = datetime(y_target, m_target, day_num)
+                detected_date = target_dt.strftime("%Y-%m-%d")
+            except Exception:
+                detected_date = f"{y_target}-{m_target:02d}-{day_num:02d}"
+
+            if any(w in lower for w in ["cumplemes", "cumple mes", "novia", "aniversario"]):
+                clean_title = "Cumplemes con mi novia" if ("novia" in lower or "pareja" in lower) else "Cumplemes"
+            else:
+                clean_title = re.sub(r"^(?:mira,?\s*)?(?:guarda|anota|recuerda|recordatorio\s+de)?\s*", "", current_text, flags=re.IGNORECASE).strip()
+                clean_title = clean_title.capitalize() if clean_title else f"Recordatorio día {day_num}"
+
+            return {
+                "action": "scheduled_task",
+                "destination": "agenda",
+                "message": f"¡Anotado! He guardado '{clean_title}' para el día {day_num} de cada mes como recordatorio mensual en tu Agenda (sin mezclarse con tu Foco diario).",
+                "tasks": [
+                    {
+                        "title": clean_title,
+                        "tag": f"Mensual (día {day_num})",
+                        "scheduled_time": detected_time,
+                        "scheduled_date": detected_date,
+                        "task_type": "appointment",
+                        "recurrence": "monthly",
+                        "is_priority": 1
+                    }
+                ]
+            }
 
         if "mañana" in lower or "manana" in lower:
             tomorrow = now + timedelta(days=1)

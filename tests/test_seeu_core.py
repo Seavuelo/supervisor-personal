@@ -404,6 +404,13 @@ class TestSeeUCore(unittest.TestCase):
         self.assertEqual(res_cumple["action"], "scheduled_task")
         self.assertEqual(res_cumple["destination"], "agenda")
 
+        res_cumple_mensual = ai.process_input("Mira, guarda la fecha 19 de cada mes, que cumplo un mes mas con mi novia todos los 19, asi como recordatorio")
+        self.assertEqual(res_cumple_mensual["action"], "scheduled_task")
+        self.assertEqual(res_cumple_mensual["destination"], "agenda")
+        self.assertEqual(res_cumple_mensual["tasks"][0]["recurrence"], "monthly")
+        self.assertEqual(res_cumple_mensual["tasks"][0]["task_type"], "appointment")
+        self.assertIn("cumplemes", res_cumple_mensual["tasks"][0]["title"].lower())
+
         res_doc = ai.process_input("mañana tengo doctor")
         self.assertEqual(res_doc["action"], "question")
         self.assertEqual(res_doc["destination"], "agenda")
