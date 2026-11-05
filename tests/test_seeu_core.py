@@ -123,23 +123,26 @@ class TestSeeUCore(unittest.TestCase):
 
     def test_autostart_toggle(self):
         api = seeU_API()
-        desktop_file = Path.home() / ".config" / "autostart" / "seeU.desktop"
+        autostart_file = api._get_autostart_file_path()
 
         try:
             # Activar autostart
             status_on = api.set_autostart(True)
             self.assertTrue(status_on)
-            self.assertTrue(desktop_file.exists())
+            self.assertTrue(autostart_file.exists())
             self.assertTrue(api.get_autostart_status())
 
             # Desactivar autostart
             status_off = api.set_autostart(False)
             self.assertFalse(status_off)
-            self.assertFalse(desktop_file.exists())
+            self.assertFalse(autostart_file.exists())
             self.assertFalse(api.get_autostart_status())
         finally:
-            if desktop_file.exists():
-                desktop_file.unlink()
+            if autostart_file.exists():
+                try:
+                    autostart_file.unlink()
+                except Exception:
+                    pass
 
     def test_minimize_mode_setting(self):
         api = seeU_API()
@@ -167,22 +170,22 @@ class TestSeeUCore(unittest.TestCase):
         # 1. Comparación de versiones
         self.assertEqual(parse_version("v1.0.3"), (1, 0, 3))
         self.assertEqual(parse_version("1.10.2"), (1, 10, 2))
-        self.assertTrue(is_newer_version("v1.0.6", "1.0.5"))
+        self.assertTrue(is_newer_version("v1.0.7", "1.0.6"))
         self.assertTrue(is_newer_version("v2.0.0", "1.9.9"))
-        self.assertFalse(is_newer_version("v1.0.4", "1.0.5"))
-        self.assertFalse(is_newer_version("v1.0.5", "1.0.5"))
+        self.assertFalse(is_newer_version("v1.0.5", "1.0.6"))
+        self.assertFalse(is_newer_version("v1.0.6", "1.0.6"))
 
         # 2. Preferencias de actualización
-        service = UpdateService(current_version="1.0.5")
-        self.assertTrue(service.set_update_preference("ignore", "v1.0.6"))
-        self.assertEqual(settings_repository.get_setting("update_ignored_version"), "v1.0.6")
+        service = UpdateService(current_version="1.0.6")
+        self.assertTrue(service.set_update_preference("ignore", "v1.0.7"))
+        self.assertEqual(settings_repository.get_setting("update_ignored_version"), "v1.0.7")
 
-        self.assertTrue(service.set_update_preference("remind_later", "v1.0.6"))
+        self.assertTrue(service.set_update_preference("remind_later", "v1.0.7"))
         self.assertIsNotNone(settings_repository.get_setting("update_remind_later_until"))
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.0.5")
+        self.assertEqual(api.get_app_version(), "1.0.6")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()
@@ -253,9 +256,11 @@ class TestSeeUCore(unittest.TestCase):
         self.assertEqual(settings_repository.get_setting("orb_y"), "220")
 
         # Verificar que llamadas seguras no lanzan excepción sin ventana
+        self.assertEqual(api.current_display_mode, "window")
         api.minimize_to_orb()
         api.restore_window()
         api.minimize_to_tray()
+        api.restore_from_tray()
         api.move_orb_by(10, 10)
 
     def test_always_on_top_and_window_drag(self):

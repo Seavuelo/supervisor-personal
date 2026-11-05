@@ -42,4 +42,11 @@ DATABASE_PATH = _resolve_database_path()
 
 def get_connection():
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(DATABASE_PATH, timeout=30.0)
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA foreign_keys = ON")
+    except Exception:
+        pass
+    return conn

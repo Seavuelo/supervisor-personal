@@ -20,6 +20,90 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+def apply_window_blur(hwnd: int):
+    """
+    Aplica desenfoque real (blur / acrylic) de fondo en Windows.
+    Soporta:
+      - Windows 11: DWMWA_SYSTEMBACKDROP_TYPE (Acrylic nativo) + Dark Mode
+      - Windows 10: SetWindowCompositionAttribute (Accent BlurBehind fluido sin lag de arrastre)
+      - Fallback: DwmEnableBlurBehindWindow
+    """
+    if sys.platform != "win32" or not hwnd:
+        return
+
+    import ctypes
+    from ctypes import c_int, c_uint, POINTER, Structure, sizeof, byref
+
+    # 1. Intentar API moderna de Windows 11 (Build >= 22000)
+    try:
+        dwm = ctypes.windll.dwmapi
+        # Activar modo oscuro para DWM
+        dark_mode = c_int(1)
+        dwm.DwmSetWindowAttribute(hwnd, 20, byref(dark_mode), sizeof(dark_mode))
+
+        # DWMWA_SYSTEMBACKDROP_TYPE = 38
+        # DWMSBT_TRANSIENTWINDOW = 3 (Acrylic nativo)
+        backdrop_type = c_int(3)
+        res = dwm.DwmSetWindowAttribute(hwnd, 38, byref(backdrop_type), sizeof(backdrop_type))
+        if res == 0:
+            return
+    except Exception:
+        pass
+
+    # 2. Windows 10: SetWindowCompositionAttribute
+    try:
+        class ACCENT_POLICY(Structure):
+            _fields_ = [
+                ('AccentState', c_int),
+                ('AccentFlags', c_uint),
+                ('GradientColor', c_uint),
+                ('AnimationId', c_uint)
+            ]
+
+        class WINCOMPATTRDATA(Structure):
+            _fields_ = [
+                ('Attribute', c_int),
+                ('Data', POINTER(ACCENT_POLICY)),
+                ('SizeOfData', c_uint)
+            ]
+
+        policy = ACCENT_POLICY()
+        # AccentState: 3 = ACCENT_ENABLE_BLURBEHIND (Desenfoque DWM fluido y acelerado por hardware sin lag)
+        policy.AccentState = 3
+        policy.AccentFlags = 0
+        policy.GradientColor = 0
+        policy.AnimationId = 0
+
+        data = WINCOMPATTRDATA()
+        data.Attribute = 19  # WCA_ACCENT_POLICY
+        data.Data = ctypes.pointer(policy)
+        data.SizeOfData = sizeof(policy)
+
+        res = ctypes.windll.user32.SetWindowCompositionAttribute(hwnd, byref(data))
+        if res:
+            return
+    except Exception:
+        pass
+
+    # 3. Fallback: DwmEnableBlurBehindWindow clásico
+    try:
+        class DWM_BLURBEHIND(Structure):
+            _fields_ = [
+                ('dwFlags', c_uint),
+                ('fEnable', c_int),
+                ('hRgnBlur', c_uint),
+                ('fTransitionOnMaximized', c_int)
+            ]
+
+        bb = DWM_BLURBEHIND()
+        bb.dwFlags = 1  # DWM_BB_ENABLE
+        bb.fEnable = 1
+        bb.hRgnBlur = 0
+        bb.fTransitionOnMaximized = 0
+        ctypes.windll.dwmapi.DwmEnableBlurBehindWindow(hwnd, byref(bb))
+    except Exception:
+        pass
+
 class seeU_API:
     def __init__(self):
         self.window = None
@@ -42,6 +126,7 @@ class seeU_API:
         self.full_width = 430
         self.full_height = 620
         self.orb_size = 44
+        self.current_display_mode = "window"  # "window", "orb", "tray"
 
     def set_window(self, window):
         self.window = window
@@ -180,7 +265,6 @@ X-GNOME-Autostart-enabled=true
                 python_bin = sys.executable
                 main_script = Path(__file__).resolve().parent.parent / "main.py"
                 if sys.platform == "win32":
-                    # En Windows usamos pythonw si está disponible para evitar la consola negra
                     pythonw_bin = python_bin.replace("python.exe", "pythonw.exe")
                     exe = pythonw_bin if os.path.exists(pythonw_bin) else python_bin
                     content = f'@echo off\nstart "" "{exe}" "{main_script}"\n'
@@ -229,10 +313,12 @@ X-GNOME-Autostart-enabled=true
                 from webview.platforms.qt import BrowserView
                 q_win = BrowserView.instances.get(self.window.uid)
                 if q_win:
-                    self.window_x = q_win.x()
-                    self.window_y = q_win.y()
-                    settings_repository.set_setting("window_x", self.window_x)
-                    settings_repository.set_setting("window_y", self.window_y)
+                    if self.current_display_mode == "window":
+                        self.window_x = q_win.x()
+                        self.window_y = q_win.y()
+                        settings_repository.set_setting("window_x", self.window_x)
+                        settings_repository.set_setting("window_y", self.window_y)
+                    self.current_display_mode = "tray"
                     q_win.hide()
             except Exception as e:
                 print(f"[seeU] Error en minimize_to_tray: {e}")
@@ -248,15 +334,23 @@ X-GNOME-Autostart-enabled=true
                 from webview.platforms.qt import BrowserView
                 q_win = BrowserView.instances.get(self.window.uid)
                 if q_win:
-                    self.window_x = q_win.x()
-                    self.window_y = q_win.y()
-                    settings_repository.set_setting("window_x", self.window_x)
-                    settings_repository.set_setting("window_y", self.window_y)
+                    if self.current_display_mode == "window":
+                        self.window_x = q_win.x()
+                        self.window_y = q_win.y()
+                        settings_repository.set_setting("window_x", self.window_x)
+                        settings_repository.set_setting("window_y", self.window_y)
 
+                    self.current_display_mode = "orb"
                     if q_win.isHidden():
                         q_win.show()
                     q_win.setGeometry(self.orb_x, self.orb_y, self.orb_size, self.orb_size)
                     q_win.raise_()
+                    if sys.platform == "win32":
+                        try:
+                            hwnd = int(q_win.winId())
+                            apply_window_blur(hwnd)
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"[seeU] Error en minimize_to_orb: {e}")
 
@@ -271,18 +365,23 @@ X-GNOME-Autostart-enabled=true
                 from webview.platforms.qt import BrowserView
                 q_win = BrowserView.instances.get(self.window.uid)
                 if q_win:
-                    self.orb_x = q_win.x()
-                    self.orb_y = q_win.y()
-                    settings_repository.set_setting("orb_x", self.orb_x)
-                    settings_repository.set_setting("orb_y", self.orb_y)
+                    if self.current_display_mode == "orb":
+                        self.orb_x = q_win.x()
+                        self.orb_y = q_win.y()
+                        settings_repository.set_setting("orb_x", self.orb_x)
+                        settings_repository.set_setting("orb_y", self.orb_y)
 
+                    self.current_display_mode = "window"
                     if q_win.isHidden():
                         q_win.show()
                     q_win.setGeometry(self.window_x, self.window_y, self.full_width, self.full_height)
                     q_win.raise_()
                     q_win.activateWindow()
 
-                    # Aplicar estado always_on_top configurado por el usuario
+                    if hasattr(q_win, 'webview') and q_win.webview:
+                        q_win.webview.setFocus()
+
+                    # Aplicar estado always_on_top configurado por el usuario y activar ventana
                     is_top = self.get_always_on_top()
                     if sys.platform == "win32":
                         try:
@@ -292,17 +391,66 @@ X-GNOME-Autostart-enabled=true
                             HWND_NOTOPMOST = -2
                             SWP_NOMOVE = 0x0002
                             SWP_NOSIZE = 0x0001
-                            SWP_NOACTIVATE = 0x0010
+                            SWP_SHOWWINDOW = 0x0040
                             ctypes.windll.user32.SetWindowPos(
                                 hwnd,
                                 HWND_TOPMOST if is_top else HWND_NOTOPMOST,
                                 0, 0, 0, 0,
-                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
                             )
+                            ctypes.windll.user32.SetForegroundWindow(hwnd)
+                            apply_window_blur(hwnd)
                         except Exception:
                             pass
             except Exception as e:
                 print(f"[seeU] Error en restore_window: {e}")
+
+        _run_in_gui(_do_restore)
+
+    def restore_from_tray(self):
+        if not self.window:
+            return
+
+        def _do_restore():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win:
+                    self.current_display_mode = "window"
+                    if q_win.isHidden():
+                        q_win.show()
+                    q_win.setGeometry(self.window_x, self.window_y, self.full_width, self.full_height)
+                    q_win.raise_()
+                    q_win.activateWindow()
+
+                    if hasattr(q_win, 'webview') and q_win.webview:
+                        q_win.webview.setFocus()
+
+                    if sys.platform == "win32":
+                        try:
+                            import ctypes
+                            hwnd = int(q_win.winId())
+                            is_top = self.get_always_on_top()
+                            HWND_TOPMOST = -1
+                            HWND_NOTOPMOST = -2
+                            SWP_NOMOVE = 0x0002
+                            SWP_NOSIZE = 0x0001
+                            SWP_SHOWWINDOW = 0x0040
+                            ctypes.windll.user32.SetWindowPos(
+                                hwnd,
+                                HWND_TOPMOST if is_top else HWND_NOTOPMOST,
+                                0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                            )
+                            ctypes.windll.user32.SetForegroundWindow(hwnd)
+                            apply_window_blur(hwnd)
+                        except Exception:
+                            pass
+
+                    # Notificar a la interfaz de forma asíncrona y segura sin deadlocks
+                    _safe_run_js(q_win, "restoreFromTray();")
+            except Exception as e:
+                print(f"[seeU] Error en restore_from_tray: {e}")
 
         _run_in_gui(_do_restore)
 
@@ -390,13 +538,26 @@ X-GNOME-Autostart-enabled=true
         settings_repository.set_setting("orb_y", self.orb_y)
 
     def close_app(self):
-        if self.window:
-            self.window.destroy()
+        def _do_close():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid) if self.window else None
+                if q_win and hasattr(q_win, '_tray_icon') and q_win._tray_icon:
+                    q_win._tray_icon.hide()
+            except Exception:
+                pass
+            if self.window:
+                self.window.destroy()
+
+        _run_in_gui(_do_close)
 
 class _QtInvoker(QtCore.QObject):
     def customEvent(self, event):
         if hasattr(event, 'fn') and callable(event.fn):
-            event.fn()
+            try:
+                event.fn()
+            except Exception as e:
+                print(f"[seeU] Excepcion en ejecucion GUI: {e}")
 
 class _QtFnEvent(QtCore.QEvent):
     TYPE = QtCore.QEvent.Type(QtCore.QEvent.registerEventType())
@@ -404,13 +565,29 @@ class _QtFnEvent(QtCore.QEvent):
         super().__init__(self.TYPE)
         self.fn = fn
 
-_qt_invoker = _QtInvoker()
+_qt_invoker = None
 
 def _run_in_gui(fn):
+    global _qt_invoker
+    app = QtCore.QCoreApplication.instance()
+    if not app:
+        return
+    if _qt_invoker is None:
+        _qt_invoker = _QtInvoker()
     QtCore.QCoreApplication.postEvent(_qt_invoker, _QtFnEvent(fn))
 
+def _safe_run_js(q_win, script: str):
+    """Ejecuta JavaScript de forma asíncrona en el hilo GUI de Qt evitando bloqueos y deadlocks."""
+    try:
+        if q_win and hasattr(q_win, 'webview') and q_win.webview and hasattr(q_win.webview, 'page'):
+            page = q_win.webview.page()
+            if page:
+                page.runJavaScript(script)
+    except Exception as e:
+        print(f"[seeU] Error ejecutando JS seguro: {e}")
+
 def _setup_system_tray_and_tool_window(window, api):
-    """Configura el icono en la bandeja del sistema y garantiza la transparencia real en Windows y Linux."""
+    """Configura el icono en la bandeja del sistema y garantiza la transparencia real y desenfoque en Windows y Linux."""
     def _apply_in_gui():
         try:
             from PyQt6 import QtCore
@@ -424,26 +601,34 @@ def _setup_system_tray_and_tool_window(window, api):
             icon_file = Path(__file__).resolve().parent / "assets" / "icon.png"
 
             if q_win:
-                # Garantizar fondo transparente real por pixel para que bordes y orbe no tengan cuadro
+                # Transparencia real por pixel
                 q_win.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
                 q_win.setStyleSheet("background: transparent;")
-                if hasattr(q_win, 'webview'):
+                if hasattr(q_win, 'webview') and q_win.webview:
                     q_win.webview.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
                     q_win.webview.setStyleSheet("background: transparent;")
                     if hasattr(q_win.webview, 'page') and q_win.webview.page():
                         q_win.webview.page().setBackgroundColor(QtCore.Qt.GlobalColor.transparent)
 
-                # Icono de la ventana
+                # Icono de la aplicación
                 if icon_file.exists():
                     app_icon = QIcon(str(icon_file))
                     q_win.setWindowIcon(app_icon)
                     if q_app:
                         q_app.setWindowIcon(app_icon)
 
+                # Aplicar desenfoque real (blur / acrylic) en Windows
+                if sys.platform == "win32":
+                    try:
+                        hwnd = int(q_win.winId())
+                        apply_window_blur(hwnd)
+                    except Exception as e:
+                        print(f"[seeU] Error aplicando blur inicial: {e}")
+
                 q_win.show()
 
             if q_app and QSystemTrayIcon.isSystemTrayAvailable():
-                # Crear icono para la bandeja
+                # Icono de la bandeja del sistema
                 if icon_file.exists():
                     tray_pix = QPixmap(str(icon_file)).scaled(24, 24, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
                     tray_icon = QSystemTrayIcon(QIcon(tray_pix), q_app)
@@ -470,32 +655,22 @@ def _setup_system_tray_and_tool_window(window, api):
                 menu.addSeparator()
                 action_quit = menu.addAction("Salir de seeU")
 
-                def _restore_from_tray_action():
-                    if q_win and q_win.isHidden():
-                        q_win.show()
-                        q_win.raise_()
-                        q_win.activateWindow()
-                    window.evaluate_js("restoreFromOrb();")
-
-                def _hide_to_tray_action():
-                    window.evaluate_js("minimizeToTray();")
-
-                action_open.triggered.connect(_restore_from_tray_action)
-                action_orb.triggered.connect(lambda: window.evaluate_js("minimizeToOrb();"))
-                action_tray.triggered.connect(_hide_to_tray_action)
+                # Conexiones sin evaluate_js directo (evita deadlocks)
+                action_open.triggered.connect(lambda: api.restore_from_tray())
+                action_orb.triggered.connect(lambda: _safe_run_js(q_win, "minimizeToOrb();"))
+                action_tray.triggered.connect(lambda: _safe_run_js(q_win, "minimizeToTray();"))
                 action_quit.triggered.connect(lambda: api.close_app())
 
                 def on_tray_activated(reason):
                     if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
-                        if q_win and (q_win.isHidden() or not q_win.isVisible()):
-                            _restore_from_tray_action()
+                        if not q_win or q_win.isHidden() or not q_win.isVisible() or api.current_display_mode in ("tray", "orb"):
+                            api.restore_from_tray()
                         else:
-                            window.evaluate_js("if(document.body.classList.contains('orb-mode') || document.getElementById('full-window').classList.contains('hidden')){ restoreFromOrb(); } else { requestMinimize(); }")
+                            _safe_run_js(q_win, "requestMinimize();")
 
                 tray_icon.activated.connect(on_tray_activated)
                 tray_icon.setContextMenu(menu)
                 tray_icon.show()
-                # Mantener referencia viva para evitar recolección de basura
                 q_win._tray_icon = tray_icon
         except Exception as e:
             print(f"[seeU] System Tray no disponible: {e}")
@@ -529,6 +704,11 @@ def start_ui():
     api.set_window(window)
 
     def on_app_started():
+        # Esperar a que la ventana esté lista antes de configurar el tray y el desenfoque
+        try:
+            window.events.shown.wait(5.0)
+        except Exception:
+            pass
         _setup_system_tray_and_tool_window(window, api)
 
     webview.start(on_app_started, gui="qt", debug=False)

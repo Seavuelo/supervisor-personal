@@ -10,9 +10,11 @@ load_dotenv()
 
 # Modelos oficiales soportados por Google AI Studio
 CANDIDATE_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash-lite",
     "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.8-flash",
 ]
 
 class AIService:
@@ -20,7 +22,7 @@ class AIService:
         db_key = settings_repository.get_setting("gemini_api_key")
         self.api_key = db_key or os.getenv("GEMINI_API_KEY", "")
         self.client = None
-        self.active_model = "gemini-3.5-flash"
+        self.active_model = "gemini-2.5-flash"
         self.history: List[Dict[str, str]] = []
         self._init_client()
 

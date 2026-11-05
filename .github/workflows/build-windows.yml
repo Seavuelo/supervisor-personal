@@ -73,9 +73,12 @@ jobs:
             - **seeU-Setup-x64.exe**: Instalador visual guiado con accesos directos, icono oficial y desinstalador.
             - **seeU-Windows-Portable.zip**: Paquete portable para descomprimir y ejecutar de inmediato sin instalacion.
 
-            ### Aspectos destacados de la entrega
-            - Diseno Liquid Glass con soporte de desenfoque de hardware Acrylic nativo en Windows 11 y Windows 10.
+            ### Aspectos destacados de la entrega (v1.0.6)
+            - Desenfoque real de hardware (Aero Blur y Acrylic DWM) en Windows 10 y Windows 11 sobre el diseno Liquid Glass.
+            - Correccion definitiva del congelamiento (deadlock) al restaurar la ventana desde la bandeja del sistema (System Tray).
+            - Persistencia independiente de coordenadas para evitar conflictos entre la ventana principal y el micro-orbe.
+            - Optimizacion de concurrencia y velocidad en SQLite activando modo WAL y timeout preventivo.
+            - Soporte ampliado para modelos oficiales de Google Gemini (2.5-flash, 2.0-flash, 1.5-flash).
             - Cuadro de confirmacion al cerrar para evitar interrupciones o salidas accidentales.
-            - Ecosistema para agentes de inteligencia artificial mediante CLI (seeu) y servidor MCP nativo stdio.
             - Inicio silencioso sin ventanas de consola CMD residuales.
 
