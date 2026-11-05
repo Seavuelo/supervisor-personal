@@ -185,7 +185,7 @@ class TestSeeUCore(unittest.TestCase):
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.0.7")
+        self.assertEqual(api.get_app_version(), "1.1.0")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()

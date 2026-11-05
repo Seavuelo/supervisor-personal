@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seeu"
-version = "1.0.0"
+version = "1.1.0"
 description = "Supervisor personal de escritorio y asistente anti-sobrecarga cognitiva"
 authors = [{ name = "Seavuelo" }]
 readme = "README.md"

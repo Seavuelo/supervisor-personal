@@ -73,12 +73,16 @@ jobs:
             - **seeU-Setup-x64.exe**: Instalador visual guiado con accesos directos, icono oficial y desinstalador.
             - **seeU-Windows-Portable.zip**: Paquete portable para descomprimir y ejecutar de inmediato sin instalacion.
 
-            ### Aspectos destacados de la entrega (v1.0.6)
-            - Desenfoque real de hardware (Aero Blur y Acrylic DWM) en Windows 10 y Windows 11 sobre el diseno Liquid Glass.
-            - Correccion definitiva del congelamiento (deadlock) al restaurar la ventana desde la bandeja del sistema (System Tray).
-            - Persistencia independiente de coordenadas para evitar conflictos entre la ventana principal y el micro-orbe.
-            - Optimizacion de concurrencia y velocidad en SQLite activando modo WAL y timeout preventivo.
-            - Soporte ampliado para modelos oficiales de Google Gemini (2.5-flash, 2.0-flash, 1.5-flash).
-            - Cuadro de confirmacion al cerrar para evitar interrupciones o salidas accidentales.
-            - Inicio silencioso sin ventanas de consola CMD residuales.
+            ### Aspectos destacados de la version 1.1.0
+            - Clasificacion inteligente automatica: la IA organiza tus entradas en Foco, Agenda y Metas sin tener que cambiar manualmente de seccion.
+            - Separacion estricta y sin mezclas entre tareas diarias (Foco), compromisos fechados (Agenda) y proyectos (Metas).
+            - Soporte para recordatorios recurrentes mensuales (ej. "el 19 de cada mes").
+            - Contador exacto de tareas pendientes en el micro-orbe flotante reflejando solo las tareas reales del dia de Foco.
+            - Modelos Google Gemini Flash-Lite priorizados (`gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`) para velocidad instantanea y prevencion de limites de cuota 429.
+            - Apertura nativa de enlaces externos en el navegador predeterminado mediante shell de Windows.
+            - Redimensionamiento dinamico interactivo (ancho y alto) con persistencia y adaptabilidad tipografica.
+            - Recordatorios proactivos y periodicos no invasivos para citas y fechas importantes.
+            - Barra de desplazamiento personalizada y ultra fina en el panel de opciones.
+            - Eliminacion absoluta de bordes rectangulares y artefactos de composicion DWM en esquinas y micro-orbe.
+            - Optimizacion de arranque rapido y eliminacion de bloqueos de interfaz.
 
