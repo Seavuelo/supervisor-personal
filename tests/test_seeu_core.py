@@ -185,7 +185,7 @@ class TestSeeUCore(unittest.TestCase):
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.0.6")
+        self.assertEqual(api.get_app_version(), "1.0.7")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()
@@ -285,6 +285,85 @@ class TestSeeUCore(unittest.TestCase):
         self.assertEqual(settings_repository.get_setting("window_x"), "400")
         self.assertEqual(settings_repository.get_setting("window_y"), "250")
         api.move_window_by(20, -10)
+
+    def test_window_dimensions_and_resizing(self):
+        api = seeU_API()
+        # Dimensiones por defecto
+        dims = api.get_window_dimensions()
+        self.assertEqual(dims["width"], 430)
+        self.assertEqual(dims["height"], 620)
+
+        # Redimensionar dentro de límites permitidos
+        api.resize_window(500, 750)
+        self.assertEqual(settings_repository.get_setting("window_width"), "500")
+        self.assertEqual(settings_repository.get_setting("window_height"), "750")
+
+        # Cargar de nuevo en otra instancia
+        api2 = seeU_API()
+        self.assertEqual(api2.full_width, 500)
+        self.assertEqual(api2.full_height, 750)
+
+    def test_smart_date_detection_and_reminders(self):
+        from supervisor.services.ai_service import AIService
+        ai = AIService()
+
+        # 1. Probar parsing de "dentista a las 8 am un martes"
+        res_dentista = ai.process_input("dentista a las 8 am un martes")
+        self.assertIn("tasks", res_dentista)
+        task_dent = res_dentista["tasks"][0]
+        self.assertIn("dentista", task_dent["title"].lower())
+        self.assertEqual(task_dent["scheduled_time"], "08:00")
+        self.assertIsNotNone(task_dent["scheduled_date"])
+
+        # 2. Probar parsing de "el 19 estoy de cumplemes con mi novia"
+        res_cumple = ai.process_input("el 19 estoy de cumplemes con mi novia")
+        self.assertIn("tasks", res_cumple)
+        task_c = res_cumple["tasks"][0]
+        self.assertIn("cumplemes", task_c["title"].lower())
+        self.assertTrue(task_c["scheduled_date"].endswith("-19"))
+
+        # 3. Probar generación de recordatorios inteligentes
+        today = date.today()
+        test_tasks = [
+            {
+                "id": 1,
+                "title": "Dentista",
+                "scheduled_date": today.strftime("%Y-%m-%d"),
+                "scheduled_time": "08:00",
+                "status": "pendiente"
+            },
+            {
+                "id": 2,
+                "title": "Cumplemes con mi novia",
+                "scheduled_date": (today + timedelta(days=2)).strftime("%Y-%m-%d"),
+                "scheduled_time": None,
+                "status": "pendiente"
+            },
+            {
+                "id": 3,
+                "title": "Tarea completada",
+                "scheduled_date": today.strftime("%Y-%m-%d"),
+                "status": "completada"
+            }
+        ]
+
+        reminders = ai.get_smart_reminders(test_tasks)
+        self.assertEqual(len(reminders), 2)
+        # Dentista hoy
+        self.assertEqual(reminders[0]["icon"], "calendar")
+        self.assertEqual(reminders[0]["days_left"], 0)
+        self.assertIn("asistir", reminders[0]["message"].lower())
+
+        # Cumplemes en 2 días
+        self.assertEqual(reminders[1]["icon"], "heart")
+        self.assertEqual(reminders[1]["days_left"], 2)
+        self.assertIn("celebrarlo", reminders[1]["message"].lower())
+
+    def test_connection_status_fast_check(self):
+        api = seeU_API()
+        status = api.get_connection_status()
+        self.assertIn("status", status)
+        self.assertIn(status["status"], ["ok", "offline"])
 
 if __name__ == "__main__":
     unittest.main()

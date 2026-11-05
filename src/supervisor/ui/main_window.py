@@ -138,8 +138,10 @@ class seeU_API:
         self.window_x = int(saved_win_x) if saved_win_x else 300
         self.window_y = int(saved_win_y) if saved_win_y else 180
 
-        self.full_width = 430
-        self.full_height = 620
+        saved_w = settings_repository.get_setting("window_width")
+        saved_h = settings_repository.get_setting("window_height")
+        self.full_width = int(saved_w) if saved_w else 430
+        self.full_height = int(saved_h) if saved_h else 620
         self.orb_size = 44
         self.current_display_mode = "window"  # "window", "orb", "tray"
 
@@ -226,6 +228,39 @@ class seeU_API:
 
     def test_connection(self):
         return self.ai_service.test_connection()
+
+    def get_connection_status(self):
+        return self.ai_service.get_connection_status()
+
+    def get_smart_reminders(self):
+        tasks = self.task_service.get_all_tasks()
+        return self.ai_service.get_smart_reminders(tasks)
+
+    # --- Dimensiones y Redimensión Dinámica ---
+    def resize_window(self, width: int, height: int):
+        w = max(340, min(900, int(width)))
+        h = max(420, min(1000, int(height)))
+        self.full_width = w
+        self.full_height = h
+        settings_repository.set_setting("window_width", str(w))
+        settings_repository.set_setting("window_height", str(h))
+
+        if not self.window:
+            return
+
+        def _do_resize():
+            try:
+                from webview.platforms.qt import BrowserView
+                q_win = BrowserView.instances.get(self.window.uid)
+                if q_win and self.current_display_mode == "window":
+                    q_win.resize(w, h)
+            except Exception as e:
+                print(f"[seeU] Error en resize_window: {e}")
+
+        _run_in_gui(_do_resize)
+
+    def get_window_dimensions(self):
+        return {"width": self.full_width, "height": self.full_height}
 
     # --- Actualizaciones y Versión ---
     def check_for_updates(self, manual=False):
@@ -733,6 +768,10 @@ def _setup_system_tray_and_tool_window(window, api):
 
 def start_ui():
     _ensure_default_desktop()
+    # Optimizar arranque de QtWebEngine / Chromium para evitar micro-congelamientos de GPU
+    if "QTWEBENGINE_CHROMIUM_FLAGS" not in os.environ:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-logging --disable-gpu-shader-disk-cache"
+
     current_dir = Path(__file__).resolve().parent
     html_file = current_dir / "index.html"
 

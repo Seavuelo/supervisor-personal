@@ -51,6 +51,12 @@ class AIService:
             return "••••••••"
         return self.api_key[:4] + "••••••••" + self.api_key[-4:]
 
+    def get_connection_status(self) -> Dict[str, Any]:
+        """Comprobación ultra-rápida y no bloqueante para el inicio de la app."""
+        if not self.api_key:
+            return {"status": "offline", "message": "Motor Local Autónomo"}
+        return {"status": "ok", "message": f"Gemini Configurado ({self.active_model})"}
+
     def test_connection(self) -> Dict[str, Any]:
         if not self.api_key:
             return {
@@ -220,9 +226,22 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         last_assistant_msg = prev_assistant_msgs[-1].lower() if prev_assistant_msgs else ""
         last_user_msg = prev_user_msgs[-1].lower() if prev_user_msgs else ""
 
-        time_match = re.search(r"(\d{1,2}:\d{2})", lower)
-        hour_match = re.search(r"a las (\d{1,2})", lower)
-        detected_time = time_match.group(1) if time_match else (f"{int(hour_match.group(1)):02d}:00" if hour_match else None)
+        time_match = re.search(r"\b(\d{1,2}):(\d{2})\b", lower)
+        am_pm_match = re.search(r"(?:a las\s+)?(\d{1,2})\s*(am|pm)\b", lower)
+        hour_match = re.search(r"\ba las\s+(\d{1,2})\b", lower)
+        if time_match:
+            detected_time = f"{int(time_match.group(1)):02d}:{time_match.group(2)}"
+        elif am_pm_match:
+            h = int(am_pm_match.group(1))
+            if am_pm_match.group(2) == "pm" and h < 12:
+                h += 12
+            elif am_pm_match.group(2) == "am" and h == 12:
+                h = 0
+            detected_time = f"{h:02d}:00"
+        elif hour_match:
+            detected_time = f"{int(hour_match.group(1)):02d}:00"
+        else:
+            detected_time = None
 
         # 0. RESOLUCIÓN DE TAREAS RECURRENTES O HÁBITOS DIARIOS
         # Ej: "hacer ejercicio todos los días", "tomar agua todos los días", "leer 20 min diario"
@@ -319,9 +338,12 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 "tasks": tasks
             }
 
-        # 3. DETECCIÓN DE CITA MÉDICA O REUNIÓN
-        palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
+        # 3. DETECCIÓN DE CITAS, FECHAS IMPORTANTES Y CELEBRACIONES
+        palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion", "compromiso"]
+        palabras_celebra = ["cumplemes", "cumpleaños", "cumple", "aniversario", "festejo", "celebración", "celebracion"]
         dias_map = {"lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6}
+        meses_map = {"enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12}
+        
         detected_date = None
         detected_day_name = None
 
@@ -333,37 +355,89 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
             detected_date = now.strftime("%Y-%m-%d")
             detected_day_name = "Hoy"
         else:
-            for dia, weekday_num in dias_map.items():
-                if dia in lower:
-                    days_ahead = (weekday_num - now.weekday() + 7) % 7
-                    if days_ahead == 0:
-                        days_ahead = 7
-                    detected_date = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-                    detected_day_name = dia.capitalize()
-                    break
+            # 3.A Detección por día de la semana (ej: "martes 8", "un martes", "el próximo viernes")
+            weekday_match = re.search(r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)(?:\s+(\d{1,2}))?\b", lower)
+            if weekday_match:
+                dia_str = weekday_match.group(1).replace("é", "e").replace("á", "a")
+                target_weekday = dias_map[dia_str]
+                day_num = int(weekday_match.group(2)) if weekday_match.group(2) else None
+                days_ahead = (target_weekday - now.weekday() + 7) % 7
+                if days_ahead == 0 and (detected_time is None or target_weekday != now.weekday()):
+                    days_ahead = 7
+                target_dt = now + timedelta(days=days_ahead)
+                if day_num:
+                    try:
+                        m_target = now.month if day_num >= now.day else (now.month % 12 + 1)
+                        y_target = now.year if day_num >= now.day or now.month < 12 else now.year + 1
+                        target_dt = datetime(y_target, m_target, day_num)
+                    except Exception:
+                        pass
+                detected_date = target_dt.strftime("%Y-%m-%d")
+                detected_day_name = f"{weekday_match.group(1).capitalize()} {target_dt.day}"
+            else:
+                # 3.B Detección por día del mes (ej: "el 19", "el 19 de noviembre")
+                dm_match = re.search(r"\bel\s+(\d{1,2})(?:\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚ]+))?\b", lower)
+                if dm_match:
+                    day_num = int(dm_match.group(1))
+                    month_name = dm_match.group(2).lower() if dm_match.group(2) else None
+                    month_num = meses_map.get(month_name, now.month)
+                    year = now.year
+                    if not month_name and day_num < now.day:
+                        month_num = now.month % 12 + 1
+                        if month_num == 1:
+                            year += 1
+                    try:
+                        dt = datetime(year, month_num, day_num)
+                        detected_date = dt.strftime("%Y-%m-%d")
+                        dia_sem = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][dt.weekday()]
+                        detected_day_name = f"{dia_sem} {day_num}"
+                    except Exception:
+                        pass
 
-        if any(w in lower for w in palabras_cita) or (detected_date and detected_date != now.strftime("%Y-%m-%d")):
-            if not detected_time:
+        is_cita = any(w in lower for w in palabras_cita)
+        is_celebra = any(w in lower for w in palabras_celebra)
+
+        if is_celebra and (detected_date or detected_day_name):
+            clean_title = current_text.strip()
+            clean_title = clean_title[0].upper() + clean_title[1:]
+            return {
+                "action": "scheduled_task",
+                "message": f"¡Anotado con cariño! He agendado '{clean_title}' para {detected_day_name or 'esa fecha'} en tu Agenda y activado su recordatorio inteligente.",
+                "tasks": [
+                    {
+                        "title": clean_title,
+                        "tag": f"Especial {detected_day_name or ''}".strip(),
+                        "scheduled_time": detected_time,
+                        "scheduled_date": detected_date or now.strftime("%Y-%m-%d"),
+                        "task_type": "appointment",
+                        "is_priority": 1
+                    }
+                ]
+            }
+
+        if is_cita or (detected_date and detected_date != now.strftime("%Y-%m-%d")):
+            if not detected_time and not is_celebra:
                 return {
                     "action": "question",
                     "message": f"Entendido, agendemos {current_text}. ¿A qué hora está programada?",
-                    "options": ["09:30", "11:00", "15:00", "17:30", "Sin hora fija"],
+                    "options": ["08:00", "09:30", "11:00", "15:00", "17:30", "Sin hora fija"],
                     "allow_custom": True,
                     "custom_placeholder": "Ej: 14:15 o a las 4 de la tarde...",
                     "target_date": detected_date or now.strftime("%Y-%m-%d")
                 }
             else:
-                tag_label = f"{detected_day_name or 'Agenda'} {detected_time}"
+                tag_label = f"{detected_day_name or 'Agenda'} {detected_time or ''}".strip()
                 return {
                     "action": "scheduled_task",
-                    "message": f"Compromiso agendado con éxito para {detected_day_name or 'Hoy'} a las {detected_time}.",
+                    "message": f"Compromiso agendado con éxito para {detected_day_name or 'Hoy'}{(' a las ' + detected_time) if detected_time else ''}.",
                     "tasks": [
                         {
                             "title": current_text,
                             "tag": tag_label,
                             "scheduled_time": detected_time,
                             "scheduled_date": detected_date or now.strftime("%Y-%m-%d"),
-                            "task_type": "appointment"
+                            "task_type": "appointment",
+                            "is_priority": 1
                         }
                     ]
                 }
@@ -473,3 +547,99 @@ Responde ÚNICAMENTE un JSON válido:
             "keep_ids": keep,
             "postpone_ids": postpone
         }
+
+    def get_smart_reminders(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Analiza las tareas y detecta citas, fechas importantes, cumplemeses,
+        aniversarios y compromisos próximos para generar recordatorios inteligentes.
+        """
+        now = datetime.now()
+        today = now.date()
+        reminders = []
+
+        keywords_special = ["cumplemes", "cumpleaños", "cumple", "aniversario", "dentista", "doctor", "doctora", "médico", "medico", "cita", "examen", "prueba", "pago", "tesis"]
+
+        for task in tasks:
+            if task.get("status") == "completada":
+                continue
+
+            title = task.get("title", "").strip()
+            if not title:
+                continue
+
+            title_lower = title.lower()
+            sched_date = task.get("scheduled_date")
+            sched_time = task.get("scheduled_time")
+            is_prio = bool(task.get("is_priority"))
+
+            target_date = None
+            if sched_date:
+                try:
+                    target_date = datetime.strptime(sched_date, "%Y-%m-%d").date()
+                except Exception:
+                    pass
+
+            # Si no tiene fecha asignada pero el texto dice "el 19", etc.
+            if not target_date:
+                m_day = re.search(r"\bel\s+(\d{1,2})\b", title_lower)
+                if m_day:
+                    day_val = int(m_day.group(1))
+                    try:
+                        m_val = now.month if day_val >= now.day else (now.month % 12 + 1)
+                        y_val = now.year if day_val >= now.day or now.month < 12 else now.year + 1
+                        target_date = datetime(y_val, m_val, day_val).date()
+                    except Exception:
+                        pass
+
+            is_special = any(k in title_lower for k in keywords_special) or task.get("task_type") == "appointment"
+
+            if not target_date and not is_special and not is_prio:
+                continue
+
+            days_left = (target_date - today).days if target_date else 0
+
+            # Solo recordar si es hoy, o en los próximos 14 días
+            if target_date and (days_left < 0 or days_left > 14):
+                continue
+
+            if target_date:
+                if days_left == 0:
+                    date_prefix = "Hoy"
+                elif days_left == 1:
+                    date_prefix = "Mañana"
+                else:
+                    dias_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+                    date_prefix = f"{dias_es[target_date.weekday()]} {target_date.day}"
+            else:
+                date_prefix = "Compromiso importante"
+
+            time_suffix = f" a las {sched_time}" if sched_time else ""
+
+            if any(k in title_lower for k in ["cumplemes", "cumpleaños", "aniversario"]):
+                msg = f"{date_prefix}: {title}. ¡Acuérdate de celebrarlo! ❤️"
+                icon = "heart"
+            elif any(k in title_lower for k in ["dentista", "doctor", "médico", "medico", "cita"]):
+                msg = f"{date_prefix}{time_suffix}: {title}. ¡Acuérdate de asistir! 🦷"
+                icon = "calendar"
+            elif any(k in title_lower for k in ["examen", "prueba", "tesis"]):
+                msg = f"{date_prefix}{time_suffix}: {title}. ¡Mucho éxito en tu preparación! 📚"
+                icon = "star"
+            elif "pago" in title_lower:
+                msg = f"{date_prefix}: Recordatorio de pago: {title}. 💳"
+                icon = "bell"
+            else:
+                msg = f"{date_prefix}{time_suffix}: {title}. ¡Acuérdate!"
+                icon = "bell"
+
+            reminders.append({
+                "id": task.get("id"),
+                "title": title,
+                "message": msg,
+                "date_label": date_prefix,
+                "days_left": days_left,
+                "time": sched_time,
+                "icon": icon
+            })
+
+        reminders.sort(key=lambda r: (r["days_left"], r.get("time") or "99:99"))
+        return reminders

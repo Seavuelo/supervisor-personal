@@ -1,4 +1,4 @@
 """
 seeU - Supervisor Personal de Actividades y Metas
 """
-__version__ = "1.0.6"
+__version__ = "1.0.7"

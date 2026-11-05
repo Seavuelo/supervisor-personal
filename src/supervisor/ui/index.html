@@ -146,13 +146,13 @@
       transform: translateY(-2px);
     }
 
-    /* Fade suave entre vistas del carrusel */
+    /* Fade suave entre vistas del carrusel sin saltos ni glitches */
     .view-fade {
-      animation: fadeInView 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: smoothViewTransition 0.15s ease-out;
     }
-    @keyframes fadeInView {
-      from { opacity: 0; transform: translateY(2px); }
-      to { opacity: 1; transform: translateY(0); }
+    @keyframes smoothViewTransition {
+      from { opacity: 0.7; }
+      to { opacity: 1; }
     }
 
     /* Micro-orbe flotante 36px */
@@ -194,21 +194,26 @@
     }
 
     ::-webkit-scrollbar {
-      width: 4px;
+      width: 5px;
+      height: 5px;
     }
     ::-webkit-scrollbar-track {
-      background: transparent;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.3);
       border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.65);
     }
   </style>
 </head>
 <body class="p-2 box-border text-white">
 
   <!-- VISTA PRINCIPAL: VENTANA COMPLETA -->
-  <div id="full-window" class="glass-window rounded-3xl p-4 flex flex-col justify-between">
+  <div id="full-window" class="glass-window rounded-3xl p-4 flex flex-col justify-between relative overflow-hidden">
     
     <!-- Barra superior / Cabecera (Draggable) -->
     <div class="drag-handle pb-3 border-b border-white/[0.12]">
@@ -431,8 +436,8 @@
       </div>
 
       <!-- VISTA 4: AJUSTES Y PREFERENCIAS -->
-      <div id="view-settings" class="hidden flex-1 flex flex-col justify-between pt-1 view-fade">
-        <div class="space-y-3">
+      <div id="view-settings" class="hidden flex-1 flex flex-col justify-between pt-1 overflow-hidden view-fade">
+        <div class="space-y-3 flex-1 overflow-y-auto pr-1.5 custom-scroll">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-xs font-semibold text-white readable-text">Configuración de seeU</div>
@@ -534,6 +539,20 @@
               />
             </label>
 
+            <!-- Toggle Recordatorios Inteligentes de IA -->
+            <label class="flex items-center justify-between cursor-pointer pt-1 border-t border-white/[0.06]">
+              <div>
+                <span class="text-[11px] text-neutral-200 font-medium block">Recordatorios Inteligentes de IA</span>
+                <span class="text-[9px] text-neutral-400">Avisos suaves periódicos (cada 3 min) para citas y fechas importantes</span>
+              </div>
+              <input 
+                type="checkbox" 
+                id="pref-smart-reminders" 
+                onchange="toggleSmartRemindersPreference()" 
+                class="rounded bg-black/40 border-white/20 text-white focus:ring-0 cursor-pointer"
+              />
+            </label>
+
             <!-- Modo de Visualización (Siempre Sobrepuesto vs Fondo de Escritorio) -->
             <div class="pt-2 border-t border-white/[0.08]">
               <label class="block text-[11px] font-medium text-neutral-200 mb-1.5">Visualización de notas:</label>
@@ -590,11 +609,32 @@
               </div>
             </div>
 
+            <!-- Dimensiones de Ventana Adaptables -->
+            <div class="pt-2 border-t border-white/[0.08]">
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[11px] font-medium text-neutral-200">Dimensiones de la ventana:</span>
+                <button type="button" onclick="resetWindowDimensions()" class="text-[10px] text-neutral-300 hover:text-white underline">Tamaño original</button>
+              </div>
+              <div class="grid grid-cols-2 gap-2 text-[10px]">
+                <div class="p-2 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between">
+                  <span class="text-neutral-400">Ancho:</span>
+                  <span id="label-win-width" class="font-mono text-white font-semibold">430 px</span>
+                </div>
+                <div class="p-2 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-between">
+                  <span class="text-neutral-400">Alto:</span>
+                  <span id="label-win-height" class="font-mono text-white font-semibold">620 px</span>
+                </div>
+              </div>
+              <div class="text-[9px] text-neutral-400 mt-1.5 leading-tight">
+                💡 Puedes arrastrar el borde inferior o derecho para agrandar o achicar la lista tanto vertical como lateralmente.
+              </div>
+            </div>
+
             <!-- Versión y Comprobación Manual de Actualizaciones -->
             <div class="pt-2 border-t border-white/[0.08] flex items-center justify-between">
               <div>
                 <span class="text-[11px] font-medium text-neutral-200">Versión instalada</span>
-                <span id="settings-app-version" class="text-[10px] text-neutral-400 font-mono block">v1.0.6</span>
+                <span id="settings-app-version" class="text-[10px] text-neutral-400 font-mono block">v1.0.7</span>
               </div>
               <button 
                 type="button" 
@@ -614,7 +654,7 @@
           </div>
         </div>
 
-        <div class="pt-2 border-t border-white/[0.1]">
+        <div class="pt-2 border-t border-white/[0.1] mt-auto">
           <button 
             onclick="switchView('focus')" 
             class="w-full py-2 text-xs font-medium rounded-xl bg-white/[0.1] hover:bg-white/[0.2] border border-white/[0.15] text-white transition"
@@ -624,6 +664,25 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- BANNER DE RECORDATORIOS INTELIGENTES (Citas y fechas importantes detectadas por IA) -->
+    <div id="smart-reminder-banner" class="hidden opacity-0 mt-2 p-2.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-neutral-900/80 border border-amber-300/30 backdrop-blur-xl text-xs no-drag shadow-xl transition-all duration-300">
+      <div class="flex items-start justify-between gap-2">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <div id="smart-reminder-icon" class="w-7 h-7 rounded-full bg-amber-400/20 border border-amber-300/40 flex items-center justify-center shrink-0 text-amber-200">
+            🔔
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[9px] font-mono uppercase tracking-wider text-amber-300/90 font-semibold">Recordatorio seeU</span>
+              <span id="smart-reminder-badge" class="text-[8px] font-mono px-1.5 py-0.2 rounded-full bg-white/10 text-neutral-300"></span>
+            </div>
+            <div id="smart-reminder-text" class="text-white text-[11px] font-medium leading-snug mt-0.5 break-words"></div>
+          </div>
+        </div>
+        <button onclick="dismissSmartReminder()" class="text-neutral-400 hover:text-white text-xs px-1 py-0.5 leading-none shrink-0" title="Descartar">&times;</button>
+      </div>
     </div>
 
     <!-- TIRA SEMANAL HEATMAP DE CALENDARIO (L M M J V S D) -->
@@ -691,7 +750,7 @@
         </div>
         <div id="update-modal-title" class="text-xs font-semibold text-white readable-text">Nueva versión disponible</div>
         <div id="update-modal-versions" class="text-[10px] text-neutral-300 font-mono mt-1">
-          Actual: v1.0.6 &rarr; Nueva: v...
+          Actual: v1.0.7 &rarr; Nueva: v...
         </div>
 
         <div id="update-modal-notes" class="mt-3 p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.1] text-[10px] text-neutral-300 text-left max-h-[110px] overflow-y-auto leading-relaxed font-sans">
@@ -719,6 +778,19 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- TIRADORES DE REDIMENSIÓN DE VENTANA (Vertical, Lateral y Esquina) -->
+    <div id="resize-handle-bottom" class="absolute bottom-0 left-4 right-6 h-2 cursor-ns-resize flex items-center justify-center group no-drag z-30" title="Arrastra para cambiar la altura">
+      <div class="w-12 h-1 rounded-full bg-white/15 group-hover:bg-white/60 transition"></div>
+    </div>
+    <div id="resize-handle-right" class="absolute top-12 bottom-6 right-0 w-2 cursor-ew-resize flex items-center justify-center group no-drag z-30" title="Arrastra para cambiar el ancho">
+      <div class="h-12 w-1 rounded-full bg-white/15 group-hover:bg-white/60 transition"></div>
+    </div>
+    <div id="resize-handle-corner" class="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize flex items-center justify-center group no-drag z-30" title="Arrastra para cambiar tamaño libremente">
+      <svg class="w-3 h-3 text-white/25 group-hover:text-white/80 transition" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M14 14v-2h-2v2h2zm0-4v-2h-2v2h2zm-4 4v-2H8v2h2zm0-4v-2H8v2h2zm-4 4v-2H4v2h2zm8-8V4h-2v2h2z" opacity="0.6"/>
+      </svg>
     </div>
 
   </div>
@@ -794,8 +866,9 @@
       if (target) {
         target.classList.remove('hidden');
         target.classList.remove('view-fade');
-        void target.offsetWidth; // trigger reflow
-        target.classList.add('view-fade');
+        requestAnimationFrame(() => {
+          target.classList.add('view-fade');
+        });
       }
 
       const targetBtn = document.getElementById(`tab-btn-${viewName}`);
@@ -865,7 +938,6 @@
 
     function renderCurrentView() {
       updateCounters();
-      renderWeeklyHeatmap();
 
       if (currentView === 'focus') {
         renderFocusTasks();
@@ -1286,6 +1358,14 @@
         });
         loadMinimizeModePreference();
         loadAlwaysOnTopPreference();
+        loadSmartRemindersPreference();
+        if (window.pywebview.api.get_window_dimensions) {
+          window.pywebview.api.get_window_dimensions().then(dims => {
+            if (dims && dims.width && dims.height) {
+              updateDimensionLabels(dims.width, dims.height);
+            }
+          });
+        }
         checkConnectionStatus();
       }
     }
@@ -1391,10 +1471,12 @@
         loadAlwaysOnTopPreference();
       }
       initFullWindowDrag();
+      initWindowResizing();
+      initSmartReminders();
       fetchData();
       checkOverdueTasks();
       startBackgroundSync();
-      setTimeout(checkForUpdatesOnStart, 1500);
+      setTimeout(checkForUpdatesOnStart, 8000);
     });
 
     // Envío desde la entrada de texto rápida
@@ -1747,7 +1829,8 @@
     function checkConnectionStatus() {
       const badge = document.getElementById('connection-status-badge');
       if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.test_connection().then(res => {
+        const checkFn = window.pywebview.api.get_connection_status ? window.pywebview.api.get_connection_status : window.pywebview.api.test_connection;
+        checkFn().then(res => {
           if (res.status === 'ok') {
             badge.textContent = 'Gemini Activo';
             badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono';
@@ -1755,6 +1838,9 @@
             badge.textContent = 'Motor Local';
             badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/[0.15] text-neutral-300 font-mono';
           }
+        }).catch(() => {
+          badge.textContent = 'Motor Local';
+          badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/[0.15] text-neutral-300 font-mono';
         });
       }
     }
@@ -1864,6 +1950,232 @@
       document.addEventListener('DOMContentLoaded', initFullWindowDrag);
     } else {
       initFullWindowDrag();
+    }
+
+    // --- Redimensión Dinámica de Ventana (Lateral y Vertical) ---
+    let currentWinWidth = 430;
+    let currentWinHeight = 620;
+    let isResizingWindow = false;
+    let resizeHandleType = null; // 'bottom', 'right', 'corner'
+    let resizeStartScreenX = 0;
+    let resizeStartScreenY = 0;
+    let resizeStartW = 430;
+    let resizeStartH = 620;
+    let resizeRafId = null;
+
+    function initWindowResizing() {
+      const bottomHandle = document.getElementById('resize-handle-bottom');
+      const rightHandle = document.getElementById('resize-handle-right');
+      const cornerHandle = document.getElementById('resize-handle-corner');
+
+      function startResize(e, type) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        isResizingWindow = true;
+        resizeHandleType = type;
+        resizeStartScreenX = e.screenX;
+        resizeStartScreenY = e.screenY;
+        resizeStartW = currentWinWidth;
+        resizeStartH = currentWinHeight;
+      }
+
+      if (bottomHandle) bottomHandle.addEventListener('mousedown', (e) => startResize(e, 'bottom'));
+      if (rightHandle) rightHandle.addEventListener('mousedown', (e) => startResize(e, 'right'));
+      if (cornerHandle) cornerHandle.addEventListener('mousedown', (e) => startResize(e, 'corner'));
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isResizingWindow) return;
+        if (e.buttons !== 1) {
+          isResizingWindow = false;
+          return;
+        }
+
+        const dx = e.screenX - resizeStartScreenX;
+        const dy = e.screenY - resizeStartScreenY;
+
+        let targetW = resizeStartW;
+        let targetH = resizeStartH;
+
+        if (resizeHandleType === 'bottom' || resizeHandleType === 'corner') {
+          targetH = Math.max(420, Math.min(1000, resizeStartH + dy));
+        }
+        if (resizeHandleType === 'right' || resizeHandleType === 'corner') {
+          targetW = Math.max(340, Math.min(900, resizeStartW + dx));
+        }
+
+        if (targetW !== currentWinWidth || targetH !== currentWinHeight) {
+          currentWinWidth = targetW;
+          currentWinHeight = targetH;
+          updateDimensionLabels(currentWinWidth, currentWinHeight);
+
+          if (!resizeRafId) {
+            resizeRafId = requestAnimationFrame(() => {
+              if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
+                window.pywebview.api.resize_window(currentWinWidth, currentWinHeight);
+              }
+              resizeRafId = null;
+            });
+          }
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isResizingWindow) {
+          isResizingWindow = false;
+          if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
+            window.pywebview.api.resize_window(currentWinWidth, currentWinHeight);
+          }
+        }
+      });
+
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.get_window_dimensions) {
+        window.pywebview.api.get_window_dimensions().then(dims => {
+          if (dims && dims.width && dims.height) {
+            currentWinWidth = dims.width;
+            currentWinHeight = dims.height;
+            updateDimensionLabels(currentWinWidth, currentWinHeight);
+          }
+        });
+      }
+    }
+
+    function updateDimensionLabels(w, h) {
+      const lblW = document.getElementById('label-win-width');
+      const lblH = document.getElementById('label-win-height');
+      if (lblW) lblW.textContent = `${w} px`;
+      if (lblH) lblH.textContent = `${h} px`;
+    }
+
+    function resetWindowDimensions() {
+      currentWinWidth = 430;
+      currentWinHeight = 620;
+      updateDimensionLabels(currentWinWidth, currentWinHeight);
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
+        window.pywebview.api.resize_window(430, 620);
+      }
+    }
+
+    // --- Recordatorios Inteligentes de IA (Citas y fechas destacadas) ---
+    let smartRemindersList = [];
+    let currentReminderIndex = 0;
+    let smartRemindersTimer = null;
+    let smartReminderHideTimer = null;
+    let smartRemindersEnabled = true;
+
+    async function loadSmartRemindersPreference() {
+      if (window.pywebview && window.pywebview.api) {
+        try {
+          const val = await window.pywebview.api.get_setting('smart_reminders_enabled', 'true');
+          smartRemindersEnabled = (val !== 'false');
+          const chk = document.getElementById('pref-smart-reminders');
+          if (chk) chk.checked = smartRemindersEnabled;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+
+    function toggleSmartRemindersPreference() {
+      const chk = document.getElementById('pref-smart-reminders');
+      if (!chk) return;
+      smartRemindersEnabled = chk.checked;
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.set_setting('smart_reminders_enabled', smartRemindersEnabled ? 'true' : 'false');
+      }
+      if (!smartRemindersEnabled) {
+        dismissSmartReminder();
+      } else {
+        checkAndShowSmartReminder();
+      }
+    }
+
+    async function checkAndShowSmartReminder() {
+      if (!smartRemindersEnabled) return;
+      if (document.body.classList.contains('orb-mode')) return;
+      if (currentView === 'settings') return;
+
+      try {
+        if (window.pywebview && window.pywebview.api && window.pywebview.api.get_smart_reminders) {
+          const list = await window.pywebview.api.get_smart_reminders();
+          if (Array.isArray(list) && list.length > 0) {
+            smartRemindersList = list;
+            if (currentReminderIndex >= smartRemindersList.length) {
+              currentReminderIndex = 0;
+            }
+            const item = smartRemindersList[currentReminderIndex];
+            currentReminderIndex = (currentReminderIndex + 1) % smartRemindersList.length;
+            displaySmartReminderBanner(item);
+          }
+        }
+      } catch (e) {
+        console.error("Error en checkAndShowSmartReminder:", e);
+      }
+    }
+
+    function displaySmartReminderBanner(item) {
+      const banner = document.getElementById('smart-reminder-banner');
+      const textEl = document.getElementById('smart-reminder-text');
+      const badgeEl = document.getElementById('smart-reminder-badge');
+      const iconEl = document.getElementById('smart-reminder-icon');
+      if (!banner || !textEl) return;
+
+      textEl.textContent = item.message;
+      if (badgeEl) {
+        if (item.days_left === 0) {
+          badgeEl.textContent = '¡Hoy!';
+          badgeEl.className = 'text-[8px] font-mono px-1.5 py-0.2 rounded-full bg-rose-500/30 text-rose-200 font-semibold';
+        } else if (item.days_left === 1) {
+          badgeEl.textContent = 'Mañana';
+          badgeEl.className = 'text-[8px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/30 text-amber-200 font-semibold';
+        } else {
+          badgeEl.textContent = `En ${item.days_left} días`;
+          badgeEl.className = 'text-[8px] font-mono px-1.5 py-0.2 rounded-full bg-white/10 text-neutral-300';
+        }
+      }
+
+      if (iconEl) {
+        if (item.icon === 'heart') iconEl.textContent = '❤️';
+        else if (item.icon === 'calendar') iconEl.textContent = '🦷';
+        else if (item.icon === 'star') iconEl.textContent = '⭐';
+        else iconEl.textContent = '🔔';
+      }
+
+      banner.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        banner.classList.remove('opacity-0');
+        banner.classList.add('opacity-100');
+      });
+
+      // Auto-ocultar suavemente tras 14 segundos para no estorbar
+      if (smartReminderHideTimer) clearTimeout(smartReminderHideTimer);
+      smartReminderHideTimer = setTimeout(() => {
+        dismissSmartReminder();
+      }, 14000);
+    }
+
+    function dismissSmartReminder() {
+      const banner = document.getElementById('smart-reminder-banner');
+      if (banner && !banner.classList.contains('hidden')) {
+        banner.classList.remove('opacity-100');
+        banner.classList.add('opacity-0');
+        setTimeout(() => {
+          banner.classList.add('hidden');
+        }, 300);
+      }
+      if (smartReminderHideTimer) {
+        clearTimeout(smartReminderHideTimer);
+        smartReminderHideTimer = null;
+      }
+    }
+
+    function initSmartReminders() {
+      loadSmartRemindersPreference();
+      // Primer chequeo suave a los 15 segundos tras arrancar
+      setTimeout(checkAndShowSmartReminder, 15000);
+      // Chequeo periódico cada 3 minutos (180,000 ms)
+      if (smartRemindersTimer) clearInterval(smartRemindersTimer);
+      smartRemindersTimer = setInterval(checkAndShowSmartReminder, 180000);
     }
 
     // Control de Minimización y Modos (Micro-Orbe vs Solo Bandeja)
