@@ -447,9 +447,10 @@
             <div class="flex items-center justify-between">
               <label class="text-[11px] font-medium text-neutral-200">API Key de Google Gemini</label>
               <button 
+                id="get-key-link"
                 type="button" 
                 onclick="openGoogleAIStudio()" 
-                class="text-[10px] text-neutral-300 hover:text-white underline"
+                class="text-[10px] text-neutral-300 hover:text-white underline cursor-pointer"
                 title="Abre Google AI Studio en tu navegador"
               >
                 Conseguir clave gratis &nearr;
@@ -1821,10 +1822,16 @@
 
     // Configuración y API Key
     function openGoogleAIStudio() {
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.open_external_url('https://aistudio.google.com/app/apikey');
+      const url = 'https://aistudio.google.com/app/apikey';
+      const btn = document.getElementById('get-key-link');
+      if (btn) {
+        btn.textContent = 'Abriendo en navegador...';
+        setTimeout(() => { btn.innerHTML = 'Conseguir clave gratis &nearr;'; }, 3500);
+      }
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external_url) {
+        window.pywebview.api.open_external_url(url);
       } else {
-        window.open('https://aistudio.google.com/app/apikey', '_blank');
+        window.open(url, '_blank');
       }
     }
 

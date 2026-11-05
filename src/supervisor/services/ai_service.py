@@ -8,13 +8,15 @@ from supervisor.repositories import settings_repository
 
 load_dotenv()
 
-# Modelos oficiales soportados por Google AI Studio
+# Modelos oficiales soportados por Google AI Studio (ordenados por disponibilidad y cuota)
 CANDIDATE_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-flash-lite-latest",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
     "gemini-3.5-flash",
+    "gemini-3.8-flash",
 ]
 
 class AIService:
@@ -22,7 +24,7 @@ class AIService:
         db_key = settings_repository.get_setting("gemini_api_key")
         self.api_key = db_key or os.getenv("GEMINI_API_KEY", "")
         self.client = None
-        self.active_model = "gemini-2.5-flash"
+        self.active_model = "gemini-3.5-flash-lite"
         self.history: List[Dict[str, str]] = []
         self._init_client()
 
@@ -94,7 +96,12 @@ class AIService:
                 continue
 
         # Diagnóstico claro si todos fallan
-        if "API_KEY_INVALID" in last_error or "400" in last_error or "expired" in last_error.lower():
+        if "RESOURCE_EXHAUSTED" in last_error or "429" in last_error or "quota" in last_error.lower():
+            return {
+                "status": "error",
+                "message": "Cuota diaria alcanzada en Gemini (límite del plan gratuito). seeU sigue operando de forma autónoma con su motor local."
+            }
+        elif "API_KEY_INVALID" in last_error or "400" in last_error or "expired" in last_error.lower():
             return {
                 "status": "error",
                 "message": "Clave de API inválida o expirada. Verifica en Google AI Studio."
@@ -102,11 +109,11 @@ class AIService:
         elif "404" in last_error:
             return {
                 "status": "error",
-                "message": "El endpoint del modelo no está disponible. Probando alternativas..."
+                "message": "Modelos en la nube no disponibles temporalmente. seeU continúa con su Motor Local Autónomo."
             }
         return {
             "status": "error",
-            "message": f"Error de conexión: {last_error[:70]}"
+            "message": "No se pudo conectar a Gemini. seeU sigue operando con su Motor Local Autónomo."
         }
 
     def clear_history(self):

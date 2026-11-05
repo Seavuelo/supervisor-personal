@@ -330,8 +330,22 @@ X-GNOME-Autostart-enabled=true
             return False
 
     def open_external_url(self, url):
-        import webbrowser
-        webbrowser.open(url)
+        try:
+            import os
+            import sys
+            if sys.platform == "win32":
+                os.startfile(url)
+            else:
+                import webbrowser
+                webbrowser.open(url)
+            return True
+        except Exception as e:
+            try:
+                import webbrowser
+                webbrowser.open(url)
+                return True
+            except Exception:
+                return False
 
     # --- Geometría y Control de Ventana ---
     def get_minimize_mode(self):
