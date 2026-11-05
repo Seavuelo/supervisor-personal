@@ -630,7 +630,8 @@ def _setup_system_tray_and_tool_window(window, api):
             if q_app:
                 q_app.setQuitOnLastWindowClosed(False)
 
-            icon_file = Path(__file__).resolve().parent / "assets" / "icon.png"
+            icon_ico = Path(__file__).resolve().parent / "assets" / "icon.ico"
+            icon_png = Path(__file__).resolve().parent / "assets" / "icon.png"
 
             if q_win:
                 # Transparencia real por pixel
@@ -643,8 +644,9 @@ def _setup_system_tray_and_tool_window(window, api):
                         q_win.webview.page().setBackgroundColor(QtCore.Qt.GlobalColor.transparent)
 
                 # Icono de la aplicación
-                if icon_file.exists():
-                    app_icon = QIcon(str(icon_file))
+                best_icon_file = icon_ico if icon_ico.exists() else icon_png
+                if best_icon_file.exists():
+                    app_icon = QIcon(str(best_icon_file))
                     q_win.setWindowIcon(app_icon)
                     if q_app:
                         q_app.setWindowIcon(app_icon)
@@ -660,19 +662,34 @@ def _setup_system_tray_and_tool_window(window, api):
                 q_win.show()
 
             if q_app and QSystemTrayIcon.isSystemTrayAvailable():
-                # Icono de la bandeja del sistema
-                if icon_file.exists():
-                    tray_icon = QSystemTrayIcon(QIcon(str(icon_file)), q_app)
+                # Obtener la resolución exacta de iconos de la bandeja del sistema de Windows (SM_CXSMICON)
+                sm_w, sm_h = 16, 16
+                if sys.platform == "win32":
+                    try:
+                        import ctypes
+                        sm_w = ctypes.windll.user32.GetSystemMetrics(49) or 16  # SM_CXSMICON
+                        sm_h = ctypes.windll.user32.GetSystemMetrics(50) or 16  # SM_CYSMICON
+                    except Exception:
+                        pass
+
+                # Cargar el icono escalado con precisión milimétrica al tamaño de la bandeja
+                if icon_ico.exists():
+                    tray_qicon = QIcon(str(icon_ico))
+                    tray_pix = tray_qicon.pixmap(sm_w, sm_h)
+                    tray_icon = QSystemTrayIcon(QIcon(tray_pix), q_app)
+                elif icon_png.exists():
+                    tray_pix = QPixmap(str(icon_png)).scaled(sm_w, sm_h, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
+                    tray_icon = QSystemTrayIcon(QIcon(tray_pix), q_app)
                 else:
-                    pix = QPixmap(24, 24)
+                    pix = QPixmap(sm_w, sm_h)
                     pix.fill(QtCore.Qt.GlobalColor.transparent)
                     painter = QPainter(pix)
                     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
                     painter.setBrush(QColor(16, 19, 28))
                     painter.setPen(QPen(QColor(255, 255, 255, 200), 1.5))
-                    painter.drawEllipse(2, 2, 20, 20)
+                    painter.drawEllipse(1, 1, sm_w - 2, sm_h - 2)
                     painter.setBrush(QColor(255, 255, 255))
-                    painter.drawEllipse(9, 9, 6, 6)
+                    painter.drawEllipse(sm_w // 2 - 2, sm_h // 2 - 2, 4, 4)
                     painter.end()
                     tray_icon = QSystemTrayIcon(QIcon(pix), q_app)
 
