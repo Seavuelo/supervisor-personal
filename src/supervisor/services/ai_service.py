@@ -154,40 +154,47 @@ class AIService:
         history_str = "\n".join([f"{msg['role'].upper()}: {msg['text']}" for msg in self.history])
 
         prompt = f"""
-Eres seeU, un supervisor personal empático, inteligente y sobrio. Tu misión es ayudar a una persona que siente sobrecarga cognitiva y agobio mental a definir, negociar y anotar sus actividades de forma tranquila y sin parálisis.
+Eres seeU, un supervisor personal empático, inteligente y sobrio. Tu misión es ayudar a una persona que siente sobrecarga cognitiva y agobio mental a definir, negociar y clasificar sus actividades de forma tranquila y sin parálisis.
 
 Fecha y hora de referencia: {fecha_actual}, {now.strftime("%H:%M")}.
 
 HISTORIAL DE LA CONVERSACIÓN RECIENTE:
 {history_str}
 
-REGLAS DE COMPORTAMIENTO:
-1. CERO emojis. Tono sereno, directo y reconfortante. Sin marketing ni frases vacías.
-2. Si el usuario pide un hábito o tarea que se repite (ej: "hacer ejercicio todos los días", "tomar agua todos los días"):
-   - Asignar recurrence: "daily", task_type: "daily", tag: "Diaria", scheduled_date: null.
-3. Si el usuario rechaza algo (ej: "no quiero estudiar", "quiero otras actividades", "otra cosa"):
-   - Cambia de rumbo con flexibilidad. Pregúntale qué tipo de actividades prefiere hoy (prácticas, organizar pendientes, descanso activo) y cuánto tiempo tiene.
-4. Si el usuario da un plazo o tiempo disponible (ej: "tengo 40 minutos", "1 hora"):
-   - Desglosa un plan realista y adaptable a ese tiempo exacto con pausas breves.
-5. Si el usuario propone algo vago (ej: "quiero estudiar"):
-   - Pregúntale de forma natural qué materia o proyecto tiene en mente, o qué le genera más resistencia para empezar.
-6. Si es una cita o compromiso sin hora:
-   - Pregúntale a qué hora está programada.
-7. Si la propuesta ya está clara o el usuario la aprobó:
-   - Devuelve la lista de tareas concretas listas para guardar en su Foco o Agenda.
+REGLAS DE CLASIFICACIÓN INTELIGENTE (El usuario puede escribir desde cualquier sección sin tener que especificar a dónde va):
+
+1. DESTINO METAS (action: "create_goal" o "propose_tasks" con is_goal: true):
+   - Aplica si el texto expresa un objetivo a mediano/largo plazo, aspiración, proyecto, aprendizaje de una habilidad, reto o hábito mayor ("aprender python", "aprender inglés", "leer 12 libros este año", "ahorrar 1 millón de pesos", "bajar 5 kilos", "preparar una maratón", "lanzar mi startup", "meta: terminar tesis", "mi objetivo es...", "comprar un auto").
+   - Devuelve action: "create_goal", goal_title: "...", category: "estudio" | "salud" | "finanzas" | "trabajo" | "personal", y en tasks incluye 3 pasos iniciales concretos de baja fricción para comenzar.
+   - O si el usuario pide ayuda para desglosar algo o necesita estructuración, usa action: "propose_tasks" con is_goal: true y los micro-pasos.
+
+2. DESTINO AGENDA (action: "scheduled_task" o "question"):
+   - Aplica si el texto contiene una fecha futura específica ("mañana", "el 19", "martes", "el próximo viernes", "el 12 de noviembre"), una hora ("a las 8 am", "15:30"), o un compromiso/cita médica/dentista/reunión/celebración/cumpleaños/aniversario/evento.
+   - Devuelve action: "scheduled_task", scheduled_date en formato YYYY-MM-DD, scheduled_time en formato HH:MM (si se indicó), task_type: "appointment", tag con la fecha y hora legible.
+   - Si es una cita médica o reunión donde la hora exacta es fundamental pero no se dio, devuelve action: "question" preguntando amablemente a qué hora está programada.
+
+3. DESTINO FOCO (action: "quick_task"):
+   - Aplica para tareas cotidianas, inmediatas o pendientes del día actual sin fecha futura ("comprar pan", "llamar a Carlos", "terminar el informe hoy", "revisar correos", "hacer ejercicio hoy").
+   - También hábitos que se repiten a diario ("tomar agua todos los días") con task_type: "daily" y recurrence: "daily".
+   - Devuelve action: "quick_task", scheduled_date: null o fecha de hoy, tag: "Hoy" (o "Diaria").
+
+4. RESPUESTA A RECHAZOS O DUDAS:
+   - Si el usuario dice que no quiere algo o pide otra alternativa, usa action: "question" para reconducir con serenidad.
 
 RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
 {{
-  "action": "question" | "propose_tasks" | "scheduled_task" | "quick_task",
-  "message": "Tu respuesta conversacional articulada al usuario",
+  "action": "create_goal" | "scheduled_task" | "quick_task" | "question" | "propose_tasks",
+  "destination": "goals" | "agenda" | "focus",
+  "message": "Tu respuesta serena al usuario indicando claramente dónde se guardó (Metas, Agenda o Foco)",
   "question": "Pregunta si aplica",
   "options": ["Opcion 1", "Opcion 2", "Opcion 3"],
   "allow_custom": true,
   "custom_placeholder": "Placeholder para responder",
   "is_goal": true | false,
   "goal_title": "Título si es meta",
+  "category": "estudio" | "salud" | "finanzas" | "trabajo" | "personal",
   "tasks": [
-    {{"title": "Paso 1 muy concreto", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick" | "daily" | "micro_step" | "appointment", "recurrence": "none" | "daily"}}
+    {{"title": "Actividad o paso muy concreto", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick" | "daily" | "micro_step" | "appointment", "recurrence": "none" | "daily"}}
   ]
 }}
 """
@@ -205,7 +212,17 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 raw_text = response.text.strip()
                 clean_json = re.sub(r"^```(?:json)?\s*", "", raw_text)
                 clean_json = re.sub(r"\s*```$", "", clean_json)
-                return json.loads(clean_json)
+                parsed = json.loads(clean_json)
+
+                # Asegurar consistencia de destino para la interfaz
+                act = parsed.get("action")
+                if act == "create_goal" or parsed.get("is_goal"):
+                    parsed.setdefault("destination", "goals")
+                elif act == "scheduled_task":
+                    parsed.setdefault("destination", "agenda")
+                elif act == "quick_task":
+                    parsed.setdefault("destination", "focus")
+                return parsed
             except Exception as e:
                 last_err = e
                 print(f"[seeU] Reintento con siguiente modelo tras fallo en {m_name}: {e}")
@@ -215,8 +232,9 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
 
     def _local_conversational_agent(self, current_text: str) -> Dict[str, Any]:
         """
-        Motor Local Autónomo con máquina de estados y memoria de contexto.
-        Simula una conversación real cuando el usuario aún no ha configurado Gemini o está sin conexión.
+        Motor Local Autónomo con máquina de estados, memoria de contexto y clasificación tripartita
+        (Metas vs Agenda vs Foco).
+        Permite ingresar cualquier actividad desde la barra global sin especificar prefijos.
         """
         lower = current_text.lower().strip()
         now = datetime.now()
@@ -243,32 +261,13 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         else:
             detected_time = None
 
-        # 0. RESOLUCIÓN DE TAREAS RECURRENTES O HÁBITOS DIARIOS
-        # Ej: "hacer ejercicio todos los días", "tomar agua todos los días", "leer 20 min diario"
-        if any(w in lower for w in ["todos los días", "todos los dias", "cada día", "cada dia", "diariamente", "diario", "hábito diario"]):
-            clean_title = re.sub(r"\b(todos los d[ií]as|cada d[ií]a|diariamente|diario|h[aá]bito diario)\b", "", current_text, flags=re.IGNORECASE).strip()
-            clean_title = clean_title.capitalize() if clean_title else current_text
-            return {
-                "action": "quick_task",
-                "message": f"He configurado '{clean_title}' como hábito general para todos los días.",
-                "tasks": [
-                    {
-                        "title": clean_title,
-                        "tag": "Diaria",
-                        "scheduled_time": detected_time,
-                        "scheduled_date": None,
-                        "task_type": "daily",
-                        "recurrence": "daily"
-                    }
-                ]
-            }
-
-        # 1. RESOLUCIÓN DE HORA TRAS PREGUNTA DE CITA PREVIA
+        # 0. RESOLUCIÓN DE HORA TRAS PREGUNTA DE CITA PREVIA
         if detected_time and ("a qué hora" in last_assistant_msg or "agendemos" in last_assistant_msg):
             palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion"]
             appt_title = next((m for m in reversed(prev_user_msgs) if any(w in m.lower() for w in palabras_cita)), "Cita médica")
             return {
                 "action": "scheduled_task",
+                "destination": "agenda",
                 "message": f"He agendado '{appt_title}' para las {detected_time} en tu Agenda.",
                 "tasks": [
                     {
@@ -285,6 +284,7 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         if any(w in lower for w in ["no quiero", "otra actividad", "otras actividades", "otra cosa", "cambiar", "no me gusta", "algo distinto", "mejor no"]):
             return {
                 "action": "question",
+                "destination": "focus",
                 "message": "Entendido, cambiamos de enfoque por completo. Para evitar agobio, ¿qué tipo de actividad prefieres ahora y de cuánto tiempo dispones?",
                 "options": [
                     "Tareas prácticas cortas",
@@ -296,7 +296,27 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 "custom_placeholder": "Ej: Tengo 45 minutos y prefiero ordenar mi escritorio..."
             }
 
-        # 2. DETECCIÓN DE TIEMPO DISPONIBLE
+        # 2. HÁBITOS RECURRENTES (ej: "hacer ejercicio todos los días", "tomar agua todos los días")
+        if any(w in lower for w in ["todos los días", "todos los dias", "cada día", "cada dia", "diariamente", "diario", "hábito diario"]):
+            clean_title = re.sub(r"\b(todos los d[ií]as|cada d[ií]a|diariamente|diario|h[aá]bito diario)\b", "", current_text, flags=re.IGNORECASE).strip()
+            clean_title = clean_title.capitalize() if clean_title else current_text
+            return {
+                "action": "quick_task",
+                "destination": "focus",
+                "message": f"He configurado '{clean_title}' como hábito general para todos los días.",
+                "tasks": [
+                    {
+                        "title": clean_title,
+                        "tag": "Diaria",
+                        "scheduled_time": detected_time,
+                        "scheduled_date": None,
+                        "task_type": "daily",
+                        "recurrence": "daily"
+                    }
+                ]
+            }
+
+        # 3. DETECCIÓN DE TIEMPO DISPONIBLE EN EL MOMENTO
         time_avail_match = re.search(r"(\d+)\s*(?:minutos|min|m\b)", lower)
         hour_avail_match = re.search(r"(\d+)\s*(?:horas|hora|h\b)", lower)
         is_half_hour = "media hora" in lower
@@ -309,7 +329,13 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         elif is_half_hour:
             minutes_available = 30
 
-        if minutes_available:
+        # Solo activar desglose por tiempo si el usuario explícitamente habla de su tiempo disponible o sesión
+        is_time_avail_prompt = minutes_available and (
+            any(w in lower for w in ["tengo", "dispongo", "bloque", "sesion", "sesión", "tiempo"]) or
+            re.match(r"^\d+\s*(?:minutos|min|horas?|h)\b", lower)
+        )
+
+        if is_time_avail_prompt:
             if minutes_available <= 25:
                 tasks = [
                     {"title": f"Foco único de alta prioridad ({minutes_available - 5} min)", "tag": f"{minutes_available - 5} min", "task_type": "micro_step"},
@@ -332,14 +358,77 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
 
             return {
                 "action": "propose_tasks",
+                "destination": "focus",
                 "message": f"Perfecto. Con {minutes_available} minutos disponibles, he distribuido tu tiempo en bloques de baja fricción para que no sientas sobrecarga:",
                 "is_goal": True,
                 "goal_title": f"Sesión de {minutes_available} min",
                 "tasks": tasks
             }
 
-        # 3. DETECCIÓN DE CITAS, FECHAS IMPORTANTES Y CELEBRACIONES
-        palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion", "compromiso"]
+        # 4. CLASIFICACIÓN: DESTINO METAS (Objetivos de mediano/largo plazo, aspiraciones, proyectos, habilidades)
+        is_explicit_goal = bool(re.search(r"^(?:meta|objetivo|reto|proyecto):\s*", lower) or 
+                               re.search(r"^mi\s+(?:meta|objetivo|reto|proyecto)\s+(?:es\s+)?", lower))
+        is_learn_goal = bool(re.search(r"\b(aprender\s+[\wáéíóúñ]+|estudiar\s+(?:un\s+nuevo\s+)?(?:idioma|curso|carrera|maestr[ií]a|diplomado)|terminar\s+(?:mi\s+)?tesis|escribir\s+(?:mi\s+)?tesis|leer\s+(?:\d+|varios)?\s*libros)\b", lower))
+        is_finance_goal = bool(re.search(r"\b(ahorrar(?:\s+(?:dinero|plata|lucas|\$|\d+|para))?|invertir\s+en|comprar\s+(?:un\s+)?(?:auto|casa|departamento|depto)|pagar\s+(?:mis\s+)?deudas)\b", lower))
+        is_health_goal = bool(re.search(r"\b(bajar\s+(?:de\s+)?peso|bajar\s+\d+\s*kilos|perder\s+peso|ponerme\s+en\s+forma|ganar\s+masa\s+muscular|entrenar\s+para\s+(?:una\s+)?marat[oó]n|correr\s+\d+k|ir\s+al\s+gym\s+este\s+a[ñn]o)\b", lower))
+        is_project_goal = bool(re.search(r"\b(lanzar\s+(?:mi\s+)?(?:startup|app|aplicaci[oó]n|web|negocio|canal|podcast)|crear\s+(?:mi\s+)?(?:empresa|startup|negocio)|escribir\s+un\s+libro|cambiar\s+de\s+trabajo)\b", lower))
+        is_timeframe_goal = bool(re.search(r"\b(este\s+a[ñn]o|en\s+este\s+a[ñn]o|para\s+este\s+a[ñn]o|a\s+fin\s+de\s+a[ñn]o|en\s+\d+\s+meses)\b", lower) and not re.search(r"\b(cita|dentista|m[eé]dico|doctor|reuni[oó]n|hora|hoy|ma[ñn]ana)\b", lower))
+
+        if is_explicit_goal or is_learn_goal or is_finance_goal or is_health_goal or is_project_goal or is_timeframe_goal:
+            # Limpiar el título de la meta
+            clean_title = re.sub(r"^(?:meta|objetivo|reto|proyecto):\s*", "", current_text, flags=re.IGNORECASE)
+            clean_title = re.sub(r"^mi\s+(?:meta|objetivo|reto|proyecto)\s+(?:es\s+)?", "", clean_title, flags=re.IGNORECASE).strip()
+            clean_title = clean_title[0].upper() + clean_title[1:] if clean_title else "Nueva Meta"
+
+            # Determinar categoría y micro-pasos iniciales
+            if is_finance_goal or any(w in lower for w in ["ahorr", "dinero", "plata", "invertir", "comprar auto", "comprar casa", "deuda", "lucas"]):
+                category = "finanzas"
+                steps = [
+                    {"title": f"{clean_title}: Revisar gastos fijos y fijar monto mensual de ahorro", "tag": "20 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Configurar apartado o cuenta separada para el fondo", "tag": "15 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Monitorear balance y ahorro al cierre del primer mes", "tag": "15 min", "task_type": "micro_step"}
+                ]
+            elif is_health_goal or any(w in lower for w in ["peso", "kilo", "gym", "marat", "correr", "muscular", "salud", "forma"]):
+                category = "salud"
+                steps = [
+                    {"title": f"{clean_title}: Definir rutina de inicio suave de 15 minutos", "tag": "15 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Planificar compras o comidas saludables para la semana", "tag": "20 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Registrar avances y sensaciones sin autoexigencia", "tag": "10 min", "task_type": "micro_step"}
+                ]
+            elif is_project_goal or any(w in lower for w in ["startup", "app", "empresa", "negocio", "trabajo", "proyecto", "canal", "podcast", "web"]):
+                category = "trabajo"
+                steps = [
+                    {"title": f"{clean_title}: Escribir alcance mínimo del proyecto en 1 página", "tag": "25 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Configurar herramientas y lista inicial de requisitos", "tag": "20 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Desarrollar o probar la primera funcionalidad básica", "tag": "30 min", "task_type": "micro_step"}
+                ]
+            elif is_learn_goal or any(w in lower for w in ["aprend", "estudi", "curso", "tesis", "libro", "leer", "idioma", "python", "program", "código", "codigo"]):
+                category = "estudio"
+                steps = [
+                    {"title": f"{clean_title}: Seleccionar recurso inicial o temario de estudio", "tag": "20 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Completar la primera sesión práctica o lectura corta", "tag": "25 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Anotar dudas y definir horario semanal de avance", "tag": "15 min", "task_type": "micro_step"}
+                ]
+            else:
+                category = "personal"
+                steps = [
+                    {"title": f"{clean_title}: Definir el primer micro-paso de baja fricción", "tag": "20 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Dedicar una primera sesión enfocada", "tag": "25 min", "task_type": "micro_step"},
+                    {"title": f"{clean_title}: Evaluar avances y programar el siguiente bloque", "tag": "15 min", "task_type": "micro_step"}
+                ]
+
+            return {
+                "action": "create_goal",
+                "destination": "goals",
+                "is_goal": True,
+                "goal_title": clean_title,
+                "category": category,
+                "message": f"He creado tu meta '{clean_title}' en la sección de Metas con sus 3 primeros pasos para comenzar sin sobrecarga.",
+                "tasks": steps
+            }
+
+        # 5. CLASIFICACIÓN: DESTINO AGENDA (Citas, compromisos con fecha u hora, fechas importantes, celebraciones)
+        palabras_cita = ["cita", "médico", "medico", "dentista", "doctor", "doctora", "reunión", "reunion", "compromiso", "consulta", "entrevista", "turno"]
         palabras_celebra = ["cumplemes", "cumpleaños", "cumple", "aniversario", "festejo", "celebración", "celebracion"]
         dias_map = {"lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6}
         meses_map = {"enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12}
@@ -355,7 +444,7 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
             detected_date = now.strftime("%Y-%m-%d")
             detected_day_name = "Hoy"
         else:
-            # 3.A Detección por día de la semana (ej: "martes 8", "un martes", "el próximo viernes")
+            # 5.A Detección por día de la semana (ej: "martes 8", "un martes", "el próximo viernes")
             weekday_match = re.search(r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)(?:\s+(\d{1,2}))?\b", lower)
             if weekday_match:
                 dia_str = weekday_match.group(1).replace("é", "e").replace("á", "a")
@@ -375,7 +464,7 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 detected_date = target_dt.strftime("%Y-%m-%d")
                 detected_day_name = f"{weekday_match.group(1).capitalize()} {target_dt.day}"
             else:
-                # 3.B Detección por día del mes (ej: "el 19", "el 19 de noviembre")
+                # 5.B Detección por día del mes (ej: "el 19", "el 19 de noviembre")
                 dm_match = re.search(r"\bel\s+(\d{1,2})(?:\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚ]+))?\b", lower)
                 if dm_match:
                     day_num = int(dm_match.group(1))
@@ -402,7 +491,8 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
             clean_title = clean_title[0].upper() + clean_title[1:]
             return {
                 "action": "scheduled_task",
-                "message": f"¡Anotado con cariño! He agendado '{clean_title}' para {detected_day_name or 'esa fecha'} en tu Agenda y activado su recordatorio inteligente.",
+                "destination": "agenda",
+                "message": f"¡Anotado con cariño! He agendado '{clean_title}' para {detected_day_name or 'esa fecha'} en tu Agenda.",
                 "tasks": [
                     {
                         "title": clean_title,
@@ -415,10 +505,11 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 ]
             }
 
-        if is_cita or (detected_date and detected_date != now.strftime("%Y-%m-%d")):
+        if is_cita or (detected_date and detected_date != now.strftime("%Y-%m-%d")) or (detected_time and not minutes_available):
             if not detected_time and not is_celebra:
                 return {
                     "action": "question",
+                    "destination": "agenda",
                     "message": f"Entendido, agendemos {current_text}. ¿A qué hora está programada?",
                     "options": ["08:00", "09:30", "11:00", "15:00", "17:30", "Sin hora fija"],
                     "allow_custom": True,
@@ -427,12 +518,15 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 }
             else:
                 tag_label = f"{detected_day_name or 'Agenda'} {detected_time or ''}".strip()
+                clean_title = current_text.strip()
+                clean_title = clean_title[0].upper() + clean_title[1:]
                 return {
                     "action": "scheduled_task",
+                    "destination": "agenda",
                     "message": f"Compromiso agendado con éxito para {detected_day_name or 'Hoy'}{(' a las ' + detected_time) if detected_time else ''}.",
                     "tasks": [
                         {
-                            "title": current_text,
+                            "title": clean_title,
                             "tag": tag_label,
                             "scheduled_time": detected_time,
                             "scheduled_date": detected_date or now.strftime("%Y-%m-%d"),
@@ -442,60 +536,15 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                     ]
                 }
 
-        # 4. CASO DE ESTUDIO O APRENDIZAJE
-        palabras_estudio = ["estudiar", "estudio", "aprender", "repasar", "leer", "tesis", "curso"]
-        if any(w in lower for w in palabras_estudio):
-            materias = ["python", "redes", "bases de datos", "cálculo", "matemáticas", "tesis", "algoritmos", "arquitectura"]
-            materia_encontrada = next((m.capitalize() for m in materias if m in lower), None)
-
-            if not materia_encontrada and len(lower.split()) <= 4:
-                return {
-                    "action": "question",
-                    "message": "¿Qué materia o tema específico quieres abordar hoy? Si tienes dudas, dime qué es lo que más te cuesta empezar.",
-                    "options": [
-                        "Python / Algoritmos",
-                        "Tesis / Marco Teórico",
-                        "Redes y Sistemas",
-                        "Lectura de apuntes"
-                    ],
-                    "allow_custom": True,
-                    "custom_placeholder": "Escribe la materia o describe lo que necesitas hacer..."
-                }
-            else:
-                subject = materia_encontrada or current_text
-                return {
-                    "action": "propose_tasks",
-                    "message": f"Para avanzar en {subject} sin que resulte pesado, te sugiero esta estructura de pasos cortos:",
-                    "is_goal": True,
-                    "goal_title": f"Estudio: {subject}",
-                    "tasks": [
-                        {"title": f"{subject}: Revisar conceptos esenciales o apuntes (20 min)", "tag": "20 min", "task_type": "micro_step"},
-                        {"title": f"{subject}: Resolver 1 ejercicio o escribir 1 sección (30 min)", "tag": "30 min", "task_type": "micro_step"},
-                        {"title": f"{subject}: Anotar 3 aprendizajes o pendientes (15 min)", "tag": "15 min", "task_type": "micro_step"}
-                    ]
-                }
-
-        # 5. SI MENCIONA UNA MATERIA DIRECTA
-        if len(lower.split()) <= 3 and any(w in lower for w in ["python", "redes", "datos", "tesis", "código", "codigo", "sql", "java"]):
-            subject = current_text.capitalize()
-            return {
-                "action": "propose_tasks",
-                "message": f"Excelente elección. Aquí tienes un desglose progresivo para {subject}:",
-                "is_goal": True,
-                "goal_title": f"Proyecto: {subject}",
-                "tasks": [
-                    {"title": f"{subject}: Configurar entorno o repasar fundamentos (20 min)", "tag": "20 min", "task_type": "micro_step"},
-                    {"title": f"{subject}: Implementar una prueba práctica o código funcional (30 min)", "tag": "30 min", "task_type": "micro_step"},
-                    {"title": f"{subject}: Documentar o guardar avances (15 min)", "tag": "15 min", "task_type": "micro_step"}
-                ]
-            }
-
-        # 6. Tarea simple directa
+        # 6. CLASIFICACIÓN: DESTINO FOCO (Tareas cotidianas, inmediatas o pendientes de hoy)
+        clean_title = current_text.strip()
+        clean_title = clean_title[0].upper() + clean_title[1:] if clean_title else "Tarea"
         return {
             "action": "quick_task",
-            "message": f"He anotado '{current_text}' directamente en tu Foco de Hoy.",
+            "destination": "focus",
+            "message": f"He anotado '{clean_title}' directamente en tu Foco de Hoy.",
             "tasks": [
-                {"title": current_text, "tag": "Hoy", "scheduled_time": None, "scheduled_date": None, "task_type": "quick"}
+                {"title": clean_title, "tag": "Hoy", "scheduled_time": None, "scheduled_date": None, "task_type": "quick", "recurrence": "none"}
             ]
         }
 

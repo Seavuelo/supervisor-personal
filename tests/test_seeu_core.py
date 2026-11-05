@@ -365,5 +365,59 @@ class TestSeeUCore(unittest.TestCase):
         self.assertIn("status", status)
         self.assertIn(status["status"], ["ok", "offline"])
 
+    def test_smart_destination_classification(self):
+        from supervisor.services.ai_service import AIService
+        ai = AIService()
+        ai.client = None # Probar motor autónomo local
+
+        # 1. Metas: Estudio, Finanzas, Salud y Proyectos
+        res_ingles = ai.process_input("aprender inglés este año")
+        self.assertEqual(res_ingles["action"], "create_goal")
+        self.assertEqual(res_ingles["destination"], "goals")
+        self.assertEqual(res_ingles["category"], "estudio")
+        self.assertEqual(len(res_ingles["tasks"]), 3)
+        self.assertTrue(res_ingles["is_goal"])
+
+        res_ahorro = ai.process_input("meta: ahorrar 1 millon")
+        self.assertEqual(res_ahorro["action"], "create_goal")
+        self.assertEqual(res_ahorro["destination"], "goals")
+        self.assertEqual(res_ahorro["category"], "finanzas")
+        self.assertEqual(len(res_ahorro["tasks"]), 3)
+
+        res_salud = ai.process_input("bajar 5 kilos")
+        self.assertEqual(res_salud["action"], "create_goal")
+        self.assertEqual(res_salud["destination"], "goals")
+        self.assertEqual(res_salud["category"], "salud")
+
+        res_startup = ai.process_input("lanzar mi startup")
+        self.assertEqual(res_startup["action"], "create_goal")
+        self.assertEqual(res_startup["destination"], "goals")
+        self.assertEqual(res_startup["category"], "trabajo")
+
+        # 2. Agenda: Citas con hora, fechas y preguntas aclaratorias
+        res_dentista = ai.process_input("dentista martes a las 8 am")
+        self.assertEqual(res_dentista["action"], "scheduled_task")
+        self.assertEqual(res_dentista["destination"], "agenda")
+        self.assertEqual(res_dentista["tasks"][0]["scheduled_time"], "08:00")
+
+        res_cumple = ai.process_input("el 19 estoy de cumplemes con mi novia")
+        self.assertEqual(res_cumple["action"], "scheduled_task")
+        self.assertEqual(res_cumple["destination"], "agenda")
+
+        res_doc = ai.process_input("mañana tengo doctor")
+        self.assertEqual(res_doc["action"], "question")
+        self.assertEqual(res_doc["destination"], "agenda")
+
+        # 3. Foco: Tareas cotidianas y hábitos diarios
+        res_pan = ai.process_input("comprar pan")
+        self.assertEqual(res_pan["action"], "quick_task")
+        self.assertEqual(res_pan["destination"], "focus")
+        self.assertEqual(res_pan["tasks"][0]["recurrence"], "none")
+
+        res_ejercicio = ai.process_input("hacer ejercicio todos los días")
+        self.assertEqual(res_ejercicio["action"], "quick_task")
+        self.assertEqual(res_ejercicio["destination"], "focus")
+        self.assertEqual(res_ejercicio["tasks"][0]["recurrence"], "daily")
+
 if __name__ == "__main__":
     unittest.main()
