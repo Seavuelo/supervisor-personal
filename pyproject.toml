@@ -4,17 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seeu"
-version = "1.1.1"
+version = "1.1.2"
 description = "Supervisor personal de escritorio y asistente anti-sobrecarga cognitiva"
 authors = [{ name = "Seavuelo" }]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "pywebview>=6.0.0",
     "PyQt6>=6.8.0",
     "PyQt6-WebEngine>=6.8.0",
     "qtpy>=2.4.0",
-    "google-genai>=2.0.0",
+    "google-genai>=3.4,<4",
+    "httpx2>=2,<3",
     "python-dotenv>=1.0.0",
     "keyring>=25,<27"
 ]

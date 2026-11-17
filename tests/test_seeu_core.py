@@ -202,7 +202,7 @@ class TestSeeUCore(unittest.TestCase):
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.1.1")
+        self.assertEqual(api.get_app_version(), "1.1.2")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()
@@ -290,10 +290,12 @@ class TestSeeUCore(unittest.TestCase):
 
     def test_gemini_keeps_verified_key_and_distinguishes_failures(self):
         from google.genai.errors import APIError
-        from httpx import ConnectError
+        from httpx2 import ConnectError
         from supervisor.services.ai_service import AIService
 
         ai = AIService()
+        with closing(ai._new_client("test-placeholder")):
+            pass
         client = Mock()
         response = client.models.generate_content
         with patch.object(ai, "_new_client", return_value=client):

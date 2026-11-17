@@ -38,7 +38,7 @@ python run_seeu.py
 
 Al abrir el programa, seeU guarda las tareas y preferencias en SQLite. En Windows, la ubicación predeterminada es `%APPDATA%\seeU\data\supervisor.db`. En Linux es `~/.local/share/seeU/data/supervisor.db`. Si ejecutas desde el código y ya tienes `data/supervisor.db` en el proyecto, seeU sigue usando esa base.
 
-El [instalador de GitHub Releases](https://github.com/Seavuelo/supervisor-personal/releases) incluye las dependencias de escritorio. Puedes instalarlo sobre una versión previa con la misma cuenta de Windows para conservar tareas y ajustes.
+El [instalador de GitHub Releases](https://github.com/Seavuelo/supervisor-personal/releases) incluye las dependencias de escritorio. Puedes instalarlo sobre una versión previa con la misma cuenta de Windows para conservar tareas y ajustes. Si ejecutas el código fuente, usa Python 3.11 o superior.
 
 ## Cómo compilar el ejecutable EXE para Windows
 

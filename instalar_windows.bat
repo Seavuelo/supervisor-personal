@@ -22,11 +22,11 @@ echo  Este script configurara todo tu entorno automaticamente.
 echo.
 
 echo [1/4] Verificando instalacion de Python en Windows...
-python --version >nul 2>&1
+python -c "import sys; sys.exit(sys.version_info[:2] < (3, 11))" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo  [AVISO] No se detecto Python en tu sistema.
-    echo  Para que seeU funcione, por favor instala Python 3.10 o superior
+    echo  [AVISO] No se detecto una version compatible de Python.
+    echo  Para que seeU funcione, por favor instala Python 3.11 o superior
     echo  desde: https://www.python.org/downloads/
     echo  (Asegurate de marcar la casilla "Add python.exe to PATH")
     echo.

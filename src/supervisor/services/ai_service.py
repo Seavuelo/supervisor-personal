@@ -51,7 +51,9 @@ class AIService:
 
         return genai.Client(
             api_key=key, vertexai=False,
-            http_options=HttpOptions(timeout=8000, retry_options=HttpRetryOptions(attempts=1)),
+            http_options=HttpOptions(
+                api_version="v1beta", timeout=8000, retry_options=HttpRetryOptions(attempts=1)
+            ),
         )
 
     def set_api_key(self, key: str) -> Dict[str, Any]:
@@ -133,7 +135,7 @@ class AIService:
 
     def _probe(self, client):
         from google.genai.errors import APIError
-        from httpx import TimeoutException, TransportError
+        from httpx2 import TimeoutException, TransportError
 
         try:
             _, model = self._generate(client, "Responde solo la palabra OK")
