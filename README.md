@@ -13,8 +13,8 @@ Por eso construí seeU, concibiéndolo como un compañero silencioso y liviano q
 ## Lo que hace seeU
 
 - Modo Foco, pensado para mantener en pantalla solo lo que importa hoy y despejar el ruido mental.
-- Micro orbe flotante, que comprime toda la interfaz en un círculo diminuto de vidrio oscuro cuando necesito espacio en el monitor.
-- Presencia en la bandeja del sistema, permitiendo que la ventana viva en segundo plano al lado del reloj y el volumen sin estorbar en la barra de tareas.
+- Micro orbe flotante de 34 px, con un brillo suave al pasar el mouse y un contador que se actualiza en segundo plano.
+- Presencia en la bandeja del sistema. Al ocultar la ventana, seeU pausa el reloj, el carrusel, la sincronización periódica y los avisos de la ventana hasta que vuelvas a abrirla.
 - Modo Enfoque con estrella prioritaria, para destacar aquellas tareas esenciales y filtrarlas con un clic, desactivándose automáticamente cada vez que reinicio el programa para arrancar fresco al día siguiente.
 - Carrusel ambiental con transición suave, el cual rota de forma pausada entre el Foco, la Agenda y las Metas cada diez segundos, deteniéndose de inmediato al pasar el ratón por encima o al interactuar con la ventana.
 - Heatmap semanal de lunes a domingo, mostrando cuadritos elegantes que cambian de brillo según el volumen de actividades de cada día.
@@ -36,7 +36,9 @@ cd supervisor-personal
 python run_seeu.py
 ```
 
-Al abrir el programa, este genera su propia base de datos SQLite en la carpeta data, guardando ahí todas las tareas de manera local y privada.
+Al abrir el programa, seeU guarda las tareas y preferencias en SQLite. En Windows, la ubicación predeterminada es `%APPDATA%\seeU\data\supervisor.db`. En Linux es `~/.local/share/seeU/data/supervisor.db`. Si ejecutas desde el código y ya tienes `data/supervisor.db` en el proyecto, seeU sigue usando esa base.
+
+El [instalador de GitHub Releases](https://github.com/Seavuelo/supervisor-personal/releases) incluye las dependencias de escritorio. Puedes instalarlo sobre una versión previa con la misma cuenta de Windows para conservar tareas y ajustes.
 
 ## Cómo compilar el ejecutable EXE para Windows
 
@@ -78,13 +80,15 @@ Si utilizo herramientas compatibles con el protocolo MCP como Claude Desktop o C
 
 seeU funciona de manera completa y autónoma sin necesidad de internet, gracias a su motor conversacional interno de reglas lógicas.
 
-Si quiero potenciar el mini agente con modelos de Google, simplemente voy a la pestaña de ajustes dentro de seeU e ingreso mi clave de Gemini, la cual queda cifrada y guardada en mi equipo local para responder con calidez y memoria contextual.
+Para usar Gemini, pega la clave de Google AI Studio en Ajustes y selecciona **Guardar clave**. seeU la verifica antes de guardarla en el almacén de credenciales de tu sistema y migra las claves guardadas en SQLite al actualizar. La clave guardada está vinculada a tu cuenta del sistema. En otro equipo, pégala de nuevo.
+
+Si falla la comprobación, el mensaje distingue entre pérdida de conexión, clave rechazada, permisos, cuota y disponibilidad del modelo. Revisa los permisos y el uso del proyecto en Google AI Studio. En Linux, si el almacén de credenciales no está disponible, la clave dura la sesión. También puedes configurar la variable de entorno `GEMINI_API_KEY`.
 
 En esa misma pantalla de ajustes puedo activar el inicio automático al encender el equipo, permitiendo que seeU me acompañe desde que prendo el computador sin tener que buscarlo manualmente.
 
 ## Filosofía de diseño y rendimiento
 
-Toda la interfaz fue construida bajo la premisa Ponytail de bajo consumo, utilizando PyQt6 y pywebview para lograr una estética oscura de cristal esmerilado que se mantiene en cero por ciento de uso de procesador en reposo.
+La interfaz usa PyQt6 y pywebview. Los estilos se cargan desde el equipo, y SQLite indica si hay cambios antes de que seeU vuelva a cargar los datos.
 
 No busco competir con plataformas corporativas complejas, sino tener una herramienta honesta, ligera y propia que me ayude a terminar mi carrera con la mente en paz.
 

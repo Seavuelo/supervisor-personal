@@ -12,15 +12,29 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     return default
 
 def set_setting(key: str, value: str):
+    set_settings({key: value})
+
+def set_settings(values: Dict[str, str]):
     connection = get_connection()
     cursor = connection.cursor()
-    cursor.execute("""
+    cursor.executemany("""
         INSERT INTO settings (key, value)
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    """, (key, str(value)))
+    """, [(key, str(value)) for key, value in values.items()])
     connection.commit()
     connection.close()
+
+def delete_setting(key: str):
+    connection = get_connection()
+    try:
+        connection.execute("PRAGMA secure_delete = ON")
+        removed = connection.execute("DELETE FROM settings WHERE key = ?", (key,)).rowcount
+        connection.commit()
+        if removed:
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        connection.close()
 
 def get_all_settings() -> Dict[str, str]:
     connection = get_connection()

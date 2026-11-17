@@ -3,8 +3,11 @@ import os
 import json
 import tempfile
 import sqlite3
+from contextlib import closing
 from datetime import datetime, date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 # Ajustar PYTHONPATH
 import sys
@@ -18,6 +21,15 @@ from supervisor.ui.main_window import seeU_API
 
 class TestSeeUCore(unittest.TestCase):
     def setUp(self):
+        store = {}
+        self.save_credential = Mock(side_effect=lambda service, account, key: store.update({(service, account): key}))
+        for credential_patch in (
+            patch.dict(os.environ, {"GEMINI_API_KEY": ""}),
+            patch("keyring.get_password", side_effect=lambda service, account: store.get((service, account))),
+            patch("keyring.set_password", self.save_credential),
+        ):
+            credential_patch.start()
+            self.addCleanup(credential_patch.stop)
         # Crear base de datos temporal para pruebas aisladas
         self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.temp_db.close()
@@ -122,6 +134,11 @@ class TestSeeUCore(unittest.TestCase):
         self.assertEqual(res3["tasks"][0]["scheduled_time"], "15:30")
 
     def test_autostart_toggle(self):
+        path = Path(self.temp_db.name).with_suffix(".lnk")
+        with patch.object(seeU_API, "_get_autostart_file_path", return_value=path):
+            self._check_autostart()
+
+    def _check_autostart(self):
         api = seeU_API()
         autostart_file = api._get_autostart_file_path()
 
@@ -185,7 +202,7 @@ class TestSeeUCore(unittest.TestCase):
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.1.0")
+        self.assertEqual(api.get_app_version(), "1.1.1")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()
@@ -210,6 +227,98 @@ class TestSeeUCore(unittest.TestCase):
         stats = service.get_overall_stats()
         self.assertEqual(stats["completed_ticks"], 1)
         self.assertEqual(stats["pending_tasks"], 2)
+
+    def test_month_summary_and_listing_for_an_undated_task(self):
+        from supervisor.mcp_server import execute_tool
+
+        task_id = task_repository.save_task(Task(title="Sin fecha", created_at="2026-11-03T09:00:00"))
+        summary = TaskService.get_monthly_summary("2026-11")
+        self.assertEqual([day["day"] for day in summary["days"] if day["has_activity"]], [3])
+        month = json.loads(execute_tool("seeu_list_tasks", {"month": "2026-11"}))
+        self.assertEqual([task["id"] for task in month["tasks"]], [task_id])
+
+    def test_overdue_actions_only_modify_focus(self):
+        from supervisor.services.goal_service import GoalService
+
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        goal = GoalService.create_goal("Meta")
+        step = task_repository.save_task(Task(title="Paso", goal_id=goal["id"], created_at=yesterday))
+        appointment = TaskService.create_task("Consulta", scheduled_date=yesterday, task_type="appointment")
+        recurring = TaskService.create_task("Pago", scheduled_date=yesterday, recurrence="monthly")
+        focus = TaskService.create_task("Pendiente", scheduled_date=yesterday)
+        self.assertEqual([task["id"] for task in TaskService.get_overdue_tasks()], [focus["id"]])
+        self.assertEqual(TaskService.postpone_all_overdue(), 1)
+        second = TaskService.create_task("Otra tarea", scheduled_date=yesterday)
+        self.assertEqual(TaskService.dismiss_all_overdue(), 1)
+        tasks = {task["id"]: task for task in TaskService.get_all_tasks()}
+        self.assertEqual(tasks[focus["id"]]["scheduled_date"], date.today().isoformat())
+        self.assertEqual(tasks[second["id"]]["status"], "no_lograda")
+        self.assertTrue(all(tasks[task_id]["status"] == "pendiente" for task_id in (step, appointment["id"], recurring["id"])))
+
+    def test_monthly_occurrences_keep_original_day_and_separate_ticks(self):
+        from supervisor.services.ai_service import AIService
+
+        task = TaskService.create_task("Pago", scheduled_date="2026-01-31", task_type="appointment", recurrence="monthly")
+        with patch.object(task_repository, "date", wraps=date) as clock:
+            clock.today.return_value = date(2026, 2, 28)
+            self.assertEqual(TaskService.get_all_tasks()[0]["scheduled_date"], "2026-02-28")
+            self.assertTrue(TaskService.set_task_status(task["id"], "completada"))
+            self.assertTrue(TaskService.set_task_status(task["id"], "completada"))
+            self.assertEqual(TaskService.get_all_tasks()[0]["status"], "completada")
+            clock.today.return_value = date(2026, 3, 30)
+            upcoming = TaskService.get_all_tasks()[0]
+            self.assertEqual((upcoming["scheduled_date"], upcoming["status"]), ("2026-03-31", "pendiente"))
+        with patch("supervisor.services.ai_service.datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 3, 30, 12)
+            self.assertEqual(AIService().get_smart_reminders([task])[0]["days_left"], 1)
+        self.assertEqual(TaskService.get_monthly_summary("2026-02")["completed_ticks"], 1)
+        self.assertEqual(TaskService.get_monthly_summary("2026-03")["completed_ticks"], 0)
+
+    def test_legacy_recurrence_migrates_once(self):
+        with closing(connection.get_connection()) as db, db:
+            db.execute("DROP TABLE task_ticks")
+        old_task = task_repository.save_task(Task(
+            title="Mensual anterior", scheduled_date="2026-01-19",
+            recurrence="monthly", status="completada",
+        ))
+        schema.create_tables()
+        schema.create_tables()
+        self.assertEqual(TaskService.get_monthly_summary("2026-01")["completed_ticks"], 1)
+        self.assertEqual(TaskService.get_all_tasks()[0]["status"], "pendiente")
+        self.assertTrue(TaskService.delete_task(old_task))
+        self.assertEqual(TaskService.get_monthly_summary("2026-01")["completed_ticks"], 0)
+
+    def test_gemini_keeps_verified_key_and_distinguishes_failures(self):
+        from google.genai.errors import APIError
+        from httpx import ConnectError
+        from supervisor.services.ai_service import AIService
+
+        ai = AIService()
+        client = Mock()
+        response = client.models.generate_content
+        with patch.object(ai, "_new_client", return_value=client):
+            response.side_effect = [APIError(429, {}), APIError(404, {})]
+            self.assertIn("429", ai.set_api_key("candidate")["message"])
+            self.save_credential.assert_not_called()
+            response.side_effect = ConnectError("offline")
+            self.assertIn("conexión", ai.set_api_key("candidate")["message"])
+            response.side_effect = [APIError(404, {}), SimpleNamespace(text="OK")]
+            self.assertEqual(ai.set_api_key("verified-key")["status"], "ok")
+        self.assertEqual(AIService().api_key, "verified-key")
+        failing_client = Mock()
+        failing_client.models.generate_content.side_effect = APIError(403, {})
+        with patch.object(ai, "_new_client", return_value=failing_client):
+            self.assertIn("403", ai.set_api_key("new-key")["message"])
+        self.assertEqual(ai.api_key, "verified-key")
+        self.assertEqual(failing_client.models.generate_content.call_count, 1)
+
+    def test_gemini_moves_legacy_key_out_of_sqlite(self):
+        from supervisor.services.ai_service import AIService
+
+        settings_repository.set_setting("gemini_api_key", "old-placeholder")
+        self.assertEqual(AIService().api_key, "old-placeholder")
+        self.assertIsNone(settings_repository.get_setting("gemini_api_key"))
+        self.assertEqual(AIService().get_connection_status()["status"], "configured")
 
     def test_mcp_server_tools_execution(self):
         from supervisor.mcp_server import execute_tool
@@ -248,7 +357,7 @@ class TestSeeUCore(unittest.TestCase):
 
     def test_orb_geometry_and_api(self):
         api = seeU_API()
-        self.assertEqual(api.orb_size, 44)
+        self.assertEqual(api.orb_size, 34)
         api.save_orb_position(150, 220)
         self.assertEqual(api.orb_x, 150)
         self.assertEqual(api.orb_y, 220)
@@ -262,6 +371,16 @@ class TestSeeUCore(unittest.TestCase):
         api.minimize_to_tray()
         api.restore_from_tray()
         api.move_orb_by(10, 10)
+
+    def test_ui_detects_changes_from_other_database_connections(self):
+        api = seeU_API()
+        try:
+            initial = api.get_data_version()
+            self.assertEqual(api.get_data_version(), initial)
+            TaskService.create_task("Desde CLI o MCP")
+            self.assertNotEqual(api.get_data_version(), initial)
+        finally:
+            api._close_version_connection()
 
     def test_always_on_top_and_window_drag(self):
         api = seeU_API()
@@ -292,6 +411,9 @@ class TestSeeUCore(unittest.TestCase):
         dims = api.get_window_dimensions()
         self.assertEqual(dims["width"], 430)
         self.assertEqual(dims["height"], 620)
+        api.resize_window(450, 650, persist=False)
+        self.assertEqual(api.get_window_dimensions(), {"width": 450, "height": 650})
+        self.assertIsNone(settings_repository.get_setting("window_width"))
 
         # Redimensionar dentro de límites permitidos
         api.resize_window(500, 750)

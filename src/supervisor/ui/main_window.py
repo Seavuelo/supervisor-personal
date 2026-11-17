@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 import webview
 from PyQt6 import QtCore
+from supervisor.database.connection import get_connection
 from supervisor.services.task_service import TaskService
 from supervisor.services.goal_service import GoalService
 from supervisor.services.ai_service import AIService
@@ -115,23 +116,18 @@ class seeU_API:
         self.goal_service = GoalService()
         self.ai_service = AIService()
         self.update_service = UpdateService()
+        self._version_connection = None
+        self._version_lock = threading.Lock()
 
         # Coordenadas persistentes del orbe y la ventana
-        saved_orb_x = settings_repository.get_setting("orb_x")
-        saved_orb_y = settings_repository.get_setting("orb_y")
-        self.orb_x = int(saved_orb_x) if saved_orb_x else 120
-        self.orb_y = int(saved_orb_y) if saved_orb_y else 120
-
-        saved_win_x = settings_repository.get_setting("window_x")
-        saved_win_y = settings_repository.get_setting("window_y")
-        self.window_x = int(saved_win_x) if saved_win_x else 300
-        self.window_y = int(saved_win_y) if saved_win_y else 180
-
-        saved_w = settings_repository.get_setting("window_width")
-        saved_h = settings_repository.get_setting("window_height")
-        self.full_width = int(saved_w) if saved_w else 430
-        self.full_height = int(saved_h) if saved_h else 620
-        self.orb_size = 44
+        settings = settings_repository.get_all_settings()
+        self.orb_x = int(settings.get("orb_x") or 120)
+        self.orb_y = int(settings.get("orb_y") or 120)
+        self.window_x = int(settings.get("window_x") or 300)
+        self.window_y = int(settings.get("window_y") or 180)
+        self.full_width = int(settings.get("window_width") or 430)
+        self.full_height = int(settings.get("window_height") or 620)
+        self.orb_size = 34
         self.current_display_mode = "window"  # "window", "orb", "tray"
 
     def set_window(self, window):
@@ -175,7 +171,16 @@ class seeU_API:
         return self.task_service.get_overall_stats()
 
     def get_data_version(self):
-        return self.task_service.get_data_version()
+        with self._version_lock:
+            if self._version_connection is None:
+                self._version_connection = get_connection(check_same_thread=False)
+            return str(self._version_connection.execute("PRAGMA data_version").fetchone()[0])
+
+    def _close_version_connection(self):
+        with self._version_lock:
+            if self._version_connection is not None:
+                self._version_connection.close()
+                self._version_connection = None
 
     # --- Tareas Atrasadas de Días Anteriores ---
     def get_overdue_tasks(self):
@@ -226,13 +231,13 @@ class seeU_API:
         return self.ai_service.get_smart_reminders(tasks)
 
     # --- Dimensiones y Redimensión Dinámica ---
-    def resize_window(self, width: int, height: int):
+    def resize_window(self, width: int, height: int, persist=True):
         w = max(340, min(900, int(width)))
         h = max(420, min(1000, int(height)))
         self.full_width = w
         self.full_height = h
-        settings_repository.set_setting("window_width", str(w))
-        settings_repository.set_setting("window_height", str(h))
+        if persist:
+            settings_repository.set_settings({"window_width": str(w), "window_height": str(h)})
 
         if not self.window:
             return
@@ -263,10 +268,14 @@ class seeU_API:
 
     # --- Configuraciones y Autostart ---
     def get_setting(self, key, default=""):
+        if key == "gemini_api_key":
+            return default
         val = settings_repository.get_setting(key)
         return val if val is not None else default
 
     def set_setting(self, key, value):
+        if key == "gemini_api_key":
+            return False
         settings_repository.set_setting(key, value)
         return True
 
@@ -363,7 +372,6 @@ X-GNOME-Autostart-enabled=true
 
         def _do_hide():
             try:
-                from PyQt6.QtWidgets import QSystemTrayIcon
                 from webview.platforms.qt import BrowserView
                 q_win = BrowserView.instances.get(self.window.uid)
                 if q_win:
@@ -374,17 +382,6 @@ X-GNOME-Autostart-enabled=true
                         settings_repository.set_setting("window_y", self.window_y)
                     self.current_display_mode = "tray"
                     q_win.hide()
-                    tray = getattr(q_win, '_tray_icon', None) or getattr(self, '_tray_icon', None)
-                    if tray:
-                        try:
-                            tray.showMessage(
-                                "seeU • En segundo plano",
-                                "seeU sigue activo en la bandeja del sistema. Haz clic aquí o en su icono para volver a abrirlo.",
-                                QSystemTrayIcon.MessageIcon.Information,
-                                3000
-                            )
-                        except Exception:
-                            pass
             except Exception as e:
                 print(f"[seeU] Error en minimize_to_tray: {e}")
 
@@ -787,7 +784,7 @@ def start_ui():
         js_api=api,
         width=api.full_width,
         height=api.full_height,
-        min_size=(44, 44),
+        min_size=(api.orb_size, api.orb_size),
         x=api.window_x,
         y=api.window_y,
         resizable=True,
@@ -809,4 +806,7 @@ def start_ui():
             time.sleep(0.1)
         _setup_system_tray_and_tool_window(window, api)
 
-    webview.start(on_app_started, gui="qt", debug=False)
+    try:
+        webview.start(on_app_started, gui="qt", debug=False)
+    finally:
+        api._close_version_connection()

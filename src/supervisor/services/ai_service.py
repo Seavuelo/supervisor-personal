@@ -1,50 +1,83 @@
 import os
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
+import keyring
+from keyring.errors import KeyringError
+from supervisor.models.task import RECURRING, occurrence_on_or_after
 from supervisor.repositories import settings_repository
 
 load_dotenv()
 
 # Modelos oficiales soportados por Google AI Studio (ordenados por disponibilidad y cuota)
-CANDIDATE_MODELS = [
+CANDIDATE_MODELS = (
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
-    "gemini-flash-lite-latest",
-    "gemini-2.5-flash",
-    "gemini-3.5-flash",
-    "gemini-3.8-flash",
-]
+)
+KEYRING_SERVICE = "seeU"
+KEYRING_ACCOUNT = "Gemini API"
+
+
+def _save_key(key: str):
+    keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, key)
+    settings_repository.delete_setting("gemini_api_key")
+
 
 class AIService:
     def __init__(self):
-        db_key = settings_repository.get_setting("gemini_api_key")
-        self.api_key = db_key or os.getenv("GEMINI_API_KEY", "")
+        legacy_key = settings_repository.get_setting("gemini_api_key")
+        try:
+            saved_key = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+            if legacy_key:
+                if saved_key:
+                    settings_repository.delete_setting("gemini_api_key")
+                else:
+                    _save_key(legacy_key)
+                    saved_key = legacy_key
+        except (KeyringError, OSError):
+            saved_key = legacy_key
+        self.api_key = saved_key or os.getenv("GEMINI_API_KEY", "").strip()
         self.client = None
-        self.active_model = "gemini-3.5-flash-lite"
+        self.active_model = CANDIDATE_MODELS[0]
+        self.connection_status = "configured" if self.api_key else "offline"
         self.history: List[Dict[str, str]] = []
-        self._init_client()
 
-    def _init_client(self):
-        if self.api_key:
-            try:
-                from google import genai
-                self.client = genai.Client(api_key=self.api_key)
-            except Exception as e:
-                print(f"[seeU] Inicialización de cliente Gemini: {e}")
-                self.client = None
-        else:
-            self.client = None
+    @staticmethod
+    def _new_client(key):
+        from google import genai
+        from google.genai.types import HttpOptions, HttpRetryOptions
+
+        return genai.Client(
+            api_key=key, vertexai=False,
+            http_options=HttpOptions(timeout=8000, retry_options=HttpRetryOptions(attempts=1)),
+        )
 
     def set_api_key(self, key: str) -> Dict[str, Any]:
-        cleaned_key = key.strip()
-        self.api_key = cleaned_key
-        settings_repository.set_setting("gemini_api_key", cleaned_key)
-        self._init_client()
-        return self.test_connection()
+        key = key.strip()
+        if not key or any(char.isspace() for char in key):
+            return {"status": "error", "message": "Pega la clave de Gemini completa, sin espacios ni saltos de línea."}
+        try:
+            client = self._new_client(key)
+        except (ImportError, ValueError):
+            return {"status": "error", "message": "No se pudo iniciar el componente de Gemini. Reinstala seeU."}
+        result = self._probe(client)
+        if result["status"] != "ok":
+            client.close()
+            if not self.api_key:
+                self.connection_status = "error"
+            return result
+        if self.client:
+            self.client.close()
+        self.api_key, self.client = key, client
+        self.active_model = result["model"]
+        self.connection_status = "ok"
+        try:
+            _save_key(key)
+        except (KeyringError, OSError):
+            result["message"] += " El almacén de credenciales no está disponible. La clave dura solo esta sesión."
+        return result
 
     def get_api_key_masked(self) -> str:
         if not self.api_key:
@@ -55,9 +88,7 @@ class AIService:
 
     def get_connection_status(self) -> Dict[str, Any]:
         """Comprobación ultra-rápida y no bloqueante para el inicio de la app."""
-        if not self.api_key:
-            return {"status": "offline", "message": "Motor Local Autónomo"}
-        return {"status": "ok", "message": f"Gemini Configurado ({self.active_model})"}
+        return {"status": self.connection_status}
 
     def test_connection(self) -> Dict[str, Any]:
         if not self.api_key:
@@ -66,55 +97,71 @@ class AIService:
                 "message": "Sin clave configurada. Operando en modo local autónomo."
             }
 
-        if not self.client:
-            self._init_client()
-
-        if not self.client:
+        try:
+            if not self.client:
+                self.client = self._new_client(self.api_key)
+        except (ImportError, ValueError):
+            self.connection_status = "error"
             return {
                 "status": "error",
-                "message": "Librería google-genai no inicializada."
+                "message": "No se pudo iniciar el componente de Gemini. Reinstala seeU."
             }
+        result = self._probe(self.client)
+        self.connection_status = result["status"]
+        if result["status"] == "ok":
+            self.active_model = result["model"]
+        return result
 
-        # Probar modelos candidatos para evitar 404 de modelos discontinuados o 503 de alta demanda
-        last_error = ""
-        for model_name in CANDIDATE_MODELS:
+    def _generate(self, client, prompt, **options):
+        from google.genai.errors import APIError
+
+        retryable = None
+        models = (self.active_model, *(model for model in CANDIDATE_MODELS if model != self.active_model))
+        for model in models:
             try:
-                response = self.client.models.generate_content(
-                    model=model_name,
-                    contents="Responde solo la palabra OK",
-                )
-                if response and response.text:
-                    self.active_model = model_name
-                    return {
-                        "status": "ok",
-                        "model": model_name,
-                        "message": f"Conectado a Google Gemini ({model_name}) con éxito."
-                    }
-            except Exception as e:
-                last_error = str(e)
-                print(f"[seeU] Modelo {model_name} no disponible: {e}")
-                continue
+                response = client.models.generate_content(model=model, contents=prompt, **options)
+                if response.text:
+                    return response.text.strip(), model
+            except APIError as error:
+                if error.code not in (404, 429, 500, 502, 503, 504):
+                    raise
+                if retryable is None or error.code == 429 or (retryable.code == 404 and error.code != 404):
+                    retryable = error
+        if retryable:
+            raise retryable
+        raise ValueError("Respuesta vacía de Gemini")
 
-        # Diagnóstico claro si todos fallan
-        if "RESOURCE_EXHAUSTED" in last_error or "429" in last_error or "quota" in last_error.lower():
+    def _probe(self, client):
+        from google.genai.errors import APIError
+        from httpx import TimeoutException, TransportError
+
+        try:
+            _, model = self._generate(client, "Responde solo la palabra OK")
             return {
-                "status": "error",
-                "message": "Cuota diaria alcanzada en Gemini (límite del plan gratuito). seeU sigue operando de forma autónoma con su motor local."
+                "status": "ok", "model": model,
+                "message": f"Conectado a Google Gemini ({model})."
             }
-        elif "API_KEY_INVALID" in last_error or "400" in last_error or "expired" in last_error.lower():
-            return {
-                "status": "error",
-                "message": "Clave de API inválida o expirada. Verifica en Google AI Studio."
-            }
-        elif "404" in last_error:
-            return {
-                "status": "error",
-                "message": "Modelos en la nube no disponibles temporalmente. seeU continúa con su Motor Local Autónomo."
-            }
-        return {
-            "status": "error",
-            "message": "No se pudo conectar a Gemini. seeU sigue operando con su Motor Local Autónomo."
-        }
+        except APIError as error:
+            code = error.code
+            if code == 401 or "API_KEY_INVALID" in str(error.details) or "API_KEY_EXPIRED" in str(error.details):
+                message = "Google rechazó la clave. Verifica que siga activa en Google AI Studio."
+            elif code == 403:
+                message = "Google denegó el acceso (403). Revisa las restricciones de la clave y los permisos del proyecto en AI Studio."
+            elif code == 402 or error.status == "FAILED_PRECONDITION":
+                message = f"El proyecto no cumple los requisitos de Gemini ({code}). Revisa la región y la facturación en AI Studio."
+            elif code == 429:
+                message = "Gemini alcanzó un límite de solicitudes o de cuota (429). Revisa el uso del proyecto o vuelve a intentar más tarde."
+            elif code == 404:
+                message = "El proyecto no tiene acceso a los modelos compatibles (404). Revisa su disponibilidad en Google AI Studio."
+            else:
+                message = f"Gemini devolvió un error ({code}). Vuelve a intentar más tarde."
+        except (TimeoutException, TimeoutError):
+            message = "Se agotó el tiempo de espera. Revisa la conexión o el proxy y vuelve a probar."
+        except (TransportError, OSError):
+            message = "No se pudo llegar a Google. Revisa tu conexión, proxy, firewall o certificados."
+        except ValueError:
+            message = "Gemini respondió sin texto. Vuelve a intentar más tarde."
+        return {"status": "error", "message": message}
 
     def clear_history(self):
         """Reinicia el contexto de la conversación con el agente."""
@@ -136,15 +183,18 @@ class AIService:
         if len(self.history) > 10:
             self.history = self.history[-10:]
 
-        if self.client:
+        if self.api_key and self.connection_status != "error":
             try:
+                if not self.client:
+                    self.client = self._new_client(self.api_key)
                 result = self._call_gemini_conversational()
+                self.connection_status = "ok"
                 assistant_msg = result.get("message") or result.get("question") or ""
                 if assistant_msg:
                     self.history.append({"role": "assistant", "text": assistant_msg})
                 return result
-            except Exception as e:
-                print(f"[seeU] Error llamando a Gemini ({e}), probando fallback...")
+            except Exception:
+                self.connection_status = "error"
 
         # Motor Local Autónomo adaptativo
         result = self._local_conversational_agent(text)
@@ -204,41 +254,21 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
   "goal_title": "Título si es meta",
   "category": "estudio" | "salud" | "finanzas" | "trabajo" | "personal",
   "tasks": [
-    {{"title": "Actividad o paso muy concreto", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick" | "daily" | "micro_step" | "appointment", "recurrence": "none" | "daily"}}
+    {{"title": "Actividad o paso muy concreto", "tag": "Hoy", "scheduled_time": null, "scheduled_date": null, "task_type": "quick" | "daily" | "micro_step" | "appointment", "recurrence": "none" | "daily" | "weekly" | "monthly"}}
   ]
 }}
 """
-        # Ejecutar con modelo activo o probar candidatos
-        last_err = None
-        models_to_try = [self.active_model] + [m for m in CANDIDATE_MODELS if m != self.active_model]
-
-        for m_name in models_to_try:
-            try:
-                response = self.client.models.generate_content(
-                    model=m_name,
-                    contents=prompt,
-                )
-                self.active_model = m_name
-                raw_text = response.text.strip()
-                clean_json = re.sub(r"^```(?:json)?\s*", "", raw_text)
-                clean_json = re.sub(r"\s*```$", "", clean_json)
-                parsed = json.loads(clean_json)
-
-                # Asegurar consistencia de destino para la interfaz
-                act = parsed.get("action")
-                if act == "create_goal" or parsed.get("is_goal"):
-                    parsed.setdefault("destination", "goals")
-                elif act == "scheduled_task":
-                    parsed.setdefault("destination", "agenda")
-                elif act == "quick_task":
-                    parsed.setdefault("destination", "focus")
-                return parsed
-            except Exception as e:
-                last_err = e
-                print(f"[seeU] Reintento con siguiente modelo tras fallo en {m_name}: {e}")
-                continue
-
-        raise last_err or Exception("No se pudo obtener respuesta de ningún modelo Gemini.")
+        text, model = self._generate(self.client, prompt, config={"response_mime_type": "application/json"})
+        parsed = json.loads(text)
+        act = parsed.get("action")
+        if act == "create_goal" or parsed.get("is_goal"):
+            parsed.setdefault("destination", "goals")
+        elif act == "scheduled_task":
+            parsed.setdefault("destination", "agenda")
+        elif act == "quick_task":
+            parsed.setdefault("destination", "focus")
+        self.active_model = model
+        return parsed
 
     def _local_conversational_agent(self, current_text: str) -> Dict[str, Any]:
         """
@@ -449,15 +479,15 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
         # 5.A Recordatorios recurrentes mensuales (ej: "el 19 de cada mes", "cumplemes todos los 19", "fecha 19 de cada mes")
         is_monthly = bool(re.search(r"\b(de\s+cada\s+mes|todos\s+los\s+meses|cada\s+mes|mensual(?:mente)?)\b", lower))
         month_day_match = re.search(r"\b(?:el\s+|fecha\s+|los\s+|d[ií]a\s+)?(\d{1,2})\b", lower)
-        if is_monthly and month_day_match:
+        if is_monthly and month_day_match and 1 <= int(month_day_match.group(1)) <= 31:
             day_num = int(month_day_match.group(1))
-            m_target = now.month if day_num >= now.day else (now.month % 12 + 1)
-            y_target = now.year if day_num >= now.day or now.month < 12 else now.year + 1
-            try:
-                target_dt = datetime(y_target, m_target, day_num)
-                detected_date = target_dt.strftime("%Y-%m-%d")
-            except Exception:
-                detected_date = f"{y_target}-{m_target:02d}-{day_num:02d}"
+            # Enero conserva el día elegido incluso si el primer mes actual es más corto.
+            anchor = date(now.year - 1, 1, day_num)
+            detected_date = occurrence_on_or_after("monthly", anchor.isoformat(), now.date()).isoformat()
+            if int(detected_date[-2:]) != day_num:
+                # Guardar una fecha válida con el día original para los meses siguientes.
+                next_month = date.fromisoformat(detected_date) + timedelta(days=1)
+                detected_date = occurrence_on_or_after("monthly", anchor.isoformat(), next_month).isoformat()
 
             if any(w in lower for w in ["cumplemes", "cumple mes", "novia", "aniversario"]):
                 clean_title = "Cumplemes con mi novia" if ("novia" in lower or "pareja" in lower) else "Cumplemes"
@@ -609,7 +639,7 @@ RESPONDE ÚNICAMENTE UN JSON VÁLIDO SIN TEXTO ADICIONAL:
                 "postpone_ids": []
             }
 
-        if self.client:
+        if self.client and self.connection_status == "ok":
             try:
                 task_summaries = [f"ID {t['id']}: {t['title']} ({t.get('tag', 'Hoy')})" for t in pending_tasks]
                 prompt = f"""
@@ -624,15 +654,10 @@ Responde ÚNICAMENTE un JSON válido:
   "postpone_ids": [id3, id4]
 }}
 """
-                resp = self.client.models.generate_content(
-                    model=self.active_model,
-                    contents=prompt
-                )
-                clean_json = re.sub(r"^```(?:json)?\s*", "", resp.text.strip())
-                clean_json = re.sub(r"\s*```$", "", clean_json)
-                return json.loads(clean_json)
-            except Exception as e:
-                print(f"[seeU] Fallback local en triage_focus: {e}")
+                text, _ = self._generate(self.client, prompt, config={"response_mime_type": "application/json"})
+                return json.loads(text)
+            except Exception:
+                pass
 
         # Fallback local
         keep = [t["id"] for t in pending_tasks[:2]]
@@ -655,7 +680,7 @@ Responde ÚNICAMENTE un JSON válido:
         keywords_special = ["cumplemes", "cumpleaños", "cumple", "aniversario", "dentista", "doctor", "doctora", "médico", "medico", "cita", "examen", "prueba", "pago", "tesis"]
 
         for task in tasks:
-            if task.get("status") == "completada":
+            if task.get("status") in ("completada", "no_lograda"):
                 continue
 
             title = task.get("title", "").strip()
@@ -669,10 +694,14 @@ Responde ÚNICAMENTE un JSON válido:
 
             target_date = None
             if sched_date:
-                try:
-                    target_date = datetime.strptime(sched_date, "%Y-%m-%d").date()
-                except Exception:
-                    pass
+                recurrence = task.get("recurrence")
+                if recurrence in RECURRING:
+                    target_date = occurrence_on_or_after(recurrence, sched_date, today)
+                else:
+                    try:
+                        target_date = datetime.strptime(sched_date, "%Y-%m-%d").date()
+                    except ValueError:
+                        pass
 
             # Si no tiene fecha asignada pero el texto dice "el 19", etc.
             if not target_date:

@@ -2,7 +2,7 @@
 ; Genera un instalador profesional con asistente grafico (.exe) para Windows
 
 #define MyAppName "seeU"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "Seavuelo"
 #define MyAppURL "https://github.com/Seavuelo/supervisor-personal"
 #define MyAppExeName "seeU.exe"
@@ -30,6 +30,7 @@ EnableDirDoesntExistWarning=no
 ; Permite instalar sin privilegios de administrador si el usuario no tiene permisos elevados
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+ArchitecturesAllowed=x64compatible
 OutputDir=dist-installer
 OutputBaseFilename=seeU-Setup-x64
 SetupIconFile=assets\icon.ico
@@ -66,76 +67,19 @@ Root: HKCU; Subkey: "Software\{#MyAppName}"; ValueType: string; ValueName: "ExeP
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-function GetPreviousInstallDir(): String;
-var
-  PrevDir: String;
-begin
-  PrevDir := '';
-  if not RegQueryStringValue(HKCU, 'Software\{#MyAppName}', 'InstallPath', PrevDir) then
-  begin
-    if not RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'InstallLocation', PrevDir) then
-    begin
-      RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'InstallLocation', PrevDir);
-    end;
-  end;
-  Result := PrevDir;
-end;
-
-function GetPreviousVersion(): String;
-var
-  PrevVer: String;
-begin
-  PrevVer := '';
-  if not RegQueryStringValue(HKCU, 'Software\{#MyAppName}', 'Version', PrevVer) then
-  begin
-    if not RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'DisplayVersion', PrevVer) then
-    begin
-      RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1', 'DisplayVersion', PrevVer);
-    end;
-  end;
-  Result := PrevVer;
-end;
-
 function InitializeSetup(): Boolean;
 var
-  PrevDir: String;
-  PrevVer: String;
-  UninstallerPath: String;
-  ResultCode: Integer;
-  MsgPrompt: String;
+  PreviousExe, PreviousVersion: String;
 begin
   Result := True;
-  PrevDir := GetPreviousInstallDir();
-  PrevVer := GetPreviousVersion();
-
-  if (PrevDir <> '') and FileExists(PrevDir + '\{#MyAppExeName}') then
+  if WizardSilent then
+    Exit;
+  if RegQueryStringValue(HKCU, 'Software\{#MyAppName}', 'ExePath', PreviousExe) and
+     FileExists(PreviousExe) and
+     RegQueryStringValue(HKCU, 'Software\{#MyAppName}', 'Version', PreviousVersion) then
   begin
-    if PrevVer <> '' then
-      MsgPrompt := 'Se ha detectado una version anterior de seeU (' + PrevVer + ') instalada en tu equipo.' + #13#10 + #13#10 +
-                   'Deseas actualizar a la version {#MyAppVersion} manteniendo todas tus tareas y datos a salvo?' + #13#10 + #13#10 +
-                   '[Si] Actualizar directamente conservando mis datos (Recomendado).' + #13#10 +
-                   '[No] Reinstalar desde cero.'
-    else
-      MsgPrompt := 'Se ha detectado una instalacion existente de seeU.' + #13#10 + #13#10 +
-                   'Deseas actualizar manteniendo todos tus datos personales a salvo?' + #13#10 + #13#10 +
-                   '[Si] Actualizar directamente conservando mis datos.' + #13#10 +
-                   '[No] Reinstalar desde cero.';
-
-    if MsgBox(MsgPrompt, mbConfirmation, MB_YESNO) = IDYES then
-    begin
-      Result := True;
-    end
-    else
-    begin
-      if MsgBox('Deseas desinstalar la version anterior ahora antes de continuar con la instalacion limpia?', mbConfirmation, MB_YESNO) = IDYES then
-      begin
-        UninstallerPath := PrevDir + '\unins000.exe';
-        if FileExists(UninstallerPath) then
-        begin
-          Exec(UninstallerPath, '/SILENT /NORESTART', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
-        end;
-      end;
-      Result := True;
-    end;
+    Result := MsgBox('seeU ' + PreviousVersion + ' ya esta instalado.' + #13#10 +
+      'Deseas instalar seeU {#MyAppVersion} conservando tus tareas y preferencias?',
+      mbConfirmation, MB_YESNO) = IDYES;
   end;
 end;

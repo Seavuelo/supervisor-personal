@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>seeU</title>
-  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="stylesheet" href="assets/tailwind.css">
   <style>
     html, body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, sans-serif;
@@ -23,13 +23,15 @@
       box-sizing: border-box;
     }
 
+    .hidden { display: none !important; }
+
     body.orb-mode {
       padding: 0 !important;
       margin: 0 !important;
       background: transparent !important;
       background-color: transparent !important;
-      width: 44px !important;
-      height: 44px !important;
+      width: 34px !important;
+      height: 34px !important;
       overflow: hidden !important;
       display: flex !important;
       align-items: center !important;
@@ -151,27 +153,47 @@
       to { opacity: 1; }
     }
 
-    /* Micro-orbe flotante 36px */
     .seeu-orb {
+      position: relative;
       background: rgba(16, 20, 32, 0.94);
       box-shadow: 
         0 1px 2px rgba(0, 0, 0, 0.4),
         inset 0 1px 1px 0 rgba(255, 255, 255, 0.45),
         inset 0 0 0 1px rgba(255, 255, 255, 0.22);
       border: 1px solid rgba(255, 255, 255, 0.35);
-      width: 38px;
-      height: 38px;
+      width: 30px;
+      height: 30px;
       border-radius: 9999px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: transform 0.15s ease;
+      touch-action: none;
     }
 
-    .seeu-orb:hover {
-      transform: scale(1.08);
-      border-color: rgba(255, 255, 255, 0.55);
+    .seeu-orb::before {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: inherit;
+      pointer-events: none;
+      background: radial-gradient(ellipse at 30% 15%, rgb(255 255 255 / 46%), transparent 60%);
+      opacity: 0;
+      transition: opacity 180ms ease-out, transform 180ms ease-out;
+      transform: scale(0.82);
+    }
+
+    .seeu-orb:hover::before, .seeu-orb:focus-visible::before {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .seeu-orb:focus-visible {
+      outline: 1px solid white;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .seeu-orb::before { transition: none; transform: none; }
     }
 
     .drag-handle {
@@ -475,26 +497,28 @@
             </div>
             
             <div class="text-[10px] text-neutral-300 leading-normal">
-              Gemini razona en lenguaje natural, recuerda el diálogo y te ayuda a desglosar sin sobrecarga. Almacenada exclusivamente en tu SQLite local.
+              Gemini razona en lenguaje natural, recuerda el diálogo y te ayuda a desglosar sin sobrecarga. La clave se guarda en el almacén de credenciales de tu sistema.
             </div>
 
             <div class="flex items-center gap-2 pt-1">
               <button 
                 type="button" 
-                onclick="saveApiKey()" 
+                onclick="verifyGemini(true)"
+                id="save-api-key-btn"
                 class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white text-neutral-950 hover:bg-neutral-100 transition shadow-sm"
               >
                 Guardar clave
               </button>
               <button 
                 type="button" 
-                onclick="testConnection()" 
+                onclick="verifyGemini(false)"
+                id="test-api-key-btn"
                 class="px-3 py-1.5 text-xs font-medium rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/[0.12] text-white transition"
               >
                 Probar conexión
               </button>
             </div>
-            <div id="test-result-msg" class="text-[11px] font-medium mt-1"></div>
+            <div id="test-result-msg" role="status" class="text-[11px] font-medium mt-1"></div>
           </div>
 
           <!-- Preferencias del Sistema y Visuales -->
@@ -629,7 +653,7 @@
             <div class="pt-2 border-t border-white/[0.08] flex items-center justify-between">
               <div>
                 <span class="text-[11px] font-medium text-neutral-200">Versión instalada</span>
-                <span id="settings-app-version" class="text-[10px] text-neutral-400 font-mono block">v1.1.0</span>
+                <span id="settings-app-version" class="text-[10px] text-neutral-400 font-mono block"></span>
               </div>
               <button 
                 type="button" 
@@ -744,9 +768,7 @@
           </svg>
         </div>
         <div id="update-modal-title" class="text-xs font-semibold text-white readable-text">Nueva versión disponible</div>
-        <div id="update-modal-versions" class="text-[10px] text-neutral-300 font-mono mt-1">
-          Actual: v1.1.0 &rarr; Nueva: v...
-        </div>
+        <div id="update-modal-versions" class="text-[10px] text-neutral-300 font-mono mt-1"></div>
 
         <div id="update-modal-notes" class="mt-3 p-2.5 rounded-xl bg-white/[0.04] border border-white/[0.1] text-[10px] text-neutral-300 text-left max-h-[110px] overflow-y-auto leading-relaxed font-sans">
           Cargando notas de la versión...
@@ -790,23 +812,24 @@
 
   </div>
 
-  <!-- VISTA MICRO-ORBE MINIMIZADO (36px centrado y sin marcos) -->
-  <div 
-    id="minimized-orb" 
+  <button
+    type="button"
+    id="minimized-orb"
     class="seeu-orb hidden"
+    aria-label="Abrir seeU"
     title="seeU: Clic para abrir, arrastra para mover"
   >
-    <div class="relative flex items-center justify-center pointer-events-none">
-      <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <span class="relative flex items-center justify-center pointer-events-none">
+      <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 8v5a8 8 0 0 0 16 0V8"></path>
         <circle cx="12" cy="11.5" r="2.5" fill="currentColor"></circle>
         <path d="M3 11c3-3.8 6.5-5.5 9-5.5s6 1.7 9 5.5" stroke-width="1.4" opacity="0.45"></path>
       </svg>
-      <span id="orb-count" class="absolute -top-2 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-white text-neutral-950 text-[8px] font-bold font-mono flex items-center justify-center shadow">
+      <span id="orb-count" class="absolute -top-1.5 -right-1.5 min-w-[12px] h-3 px-0.5 rounded-full bg-white text-neutral-950 text-[8px] font-bold font-mono flex items-center justify-center">
         0
       </span>
-    </div>
-  </div>
+    </span>
+  </button>
 
   <script>
     let currentView = 'focus';
@@ -822,6 +845,8 @@
     let isMouseHovering = false;
     let autoRotateTimer = null;
     let userInteractionPauseUntil = 0;
+    let displayMode = 'window';
+    let clockTimer = null;
 
     // Reloj en tiempo real para el pie de ventana
     function updateClock() {
@@ -831,8 +856,12 @@
       const el = document.getElementById('clock-display');
       if (el) el.textContent = `${h}:${m}`;
     }
-    setInterval(updateClock, 1000);
     updateClock();
+
+    function startClock() {
+      updateClock();
+      clockTimer = setTimeout(startClock, 60000 - (Date.now() % 60000));
+    }
 
     // Fecha en español
     function updateDateLabel() {
@@ -908,20 +937,18 @@
 
     function initAutoRotate() {
       if (autoRotateTimer) clearInterval(autoRotateTimer);
+      if (displayMode !== 'window' || !autoRotateTabs) return;
 
       autoRotateTimer = setInterval(() => {
-        if (!autoRotateTabs) return;
         if (isMouseHovering) return; // pausar si el cursor está encima
         if (Date.now() < userInteractionPauseUntil) return; // pausar tras interacción
         if (currentView === 'settings') return; // no rotar en ajustes
-        if (document.body.classList.contains('orb-mode')) return; // no rotar en orbe
 
         const sequence = ['focus', 'agenda', 'goals'];
         let nextIdx = (sequence.indexOf(currentView) + 1) % sequence.length;
         switchView(sequence[nextIdx], true);
       }, 10000);
     }
-    initAutoRotate();
 
     // Restablecimiento instantáneo al día de hoy
     function resetToToday() {
@@ -941,6 +968,12 @@
       } else if (currentView === 'goals') {
         renderGoals();
       }
+    }
+
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[char]);
     }
 
     function getTodayDateStr() {
@@ -967,7 +1000,8 @@
       }).length;
 
       document.getElementById('focus-counter').textContent = `${pendingFocus} pendiente${pendingFocus === 1 ? '' : 's'}`;
-      document.getElementById('orb-count').textContent = pendingFocus;
+      document.getElementById('orb-count').textContent = pendingFocus > 99 ? '99+' : pendingFocus;
+      document.getElementById('minimized-orb').setAttribute('aria-label', `Abrir seeU, ${pendingFocus} pendientes`);
 
       // Agenda: recordatorios, citas y compromisos fechados
       const agendaCount = allTasks.filter(t => {
@@ -1060,8 +1094,8 @@
 
           <!-- Título y descripción -->
           <div class="flex-1 min-w-0">
-            <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${task.title}</div>
-            ${task.description ? `<div class="text-[10px] text-neutral-200 mt-0.5 readable-text">${task.description}</div>` : ''}
+            <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${escapeHTML(task.title)}</div>
+            ${task.description ? `<div class="text-[10px] text-neutral-200 mt-0.5 readable-text">${escapeHTML(task.description)}</div>` : ''}
           </div>
 
           <!-- Estrellita Prioritaria Fina -->
@@ -1072,7 +1106,7 @@
           </button>
 
           <!-- Tag -->
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md ${isDaily ? 'bg-white/[0.18] border border-white/[0.28]' : 'bg-white/[0.1] border border-white/[0.14]'} text-white readable-text">${tagLabel}</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md ${isDaily ? 'bg-white/[0.18] border border-white/[0.28]' : 'bg-white/[0.1] border border-white/[0.14]'} text-white readable-text">${escapeHTML(tagLabel)}</span>
 
           <!-- Eliminar -->
           <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
@@ -1198,10 +1232,10 @@
             </svg>
           </button>
           <div class="flex-1 min-w-0">
-            <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${task.title}</div>
+            <div class="text-xs font-medium readable-text ${isCompleted ? 'line-through text-neutral-300' : 'text-white'} leading-snug">${escapeHTML(task.title)}</div>
             <div class="text-[10px] text-neutral-300 mt-0.5 readable-text flex items-center gap-2">
-              ${task.scheduled_date ? `<span>${task.scheduled_date}</span>` : ''}
-              ${task.scheduled_time ? `<span class="font-mono bg-white/[0.1] px-1.5 py-0.2 rounded">${task.scheduled_time}</span>` : ''}
+              ${task.scheduled_date ? `<span>${escapeHTML(task.scheduled_date)}</span>` : ''}
+              ${task.scheduled_time ? `<span class="font-mono bg-white/[0.1] px-1.5 py-0.2 rounded">${escapeHTML(task.scheduled_time)}</span>` : ''}
               ${isMonthly ? `<span class="text-neutral-400 text-[9px]">(Todos los meses)</span>` : ''}
             </div>
           </div>
@@ -1210,7 +1244,7 @@
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
             </svg>
           </button>
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${tagLabel}</span>
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.1] border border-white/[0.14] text-white readable-text">${escapeHTML(tagLabel)}</span>
           <button onclick="deleteTask(${task.id})" class="opacity-0 group-hover:opacity-100 text-neutral-300 hover:text-red-400 text-xs px-1 transition" title="Eliminar">&times;</button>
         `;
         container.appendChild(div);
@@ -1249,9 +1283,9 @@
                       <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </button>
-                  <span class="readable-text ${isStepCompleted ? 'line-through text-neutral-400' : 'text-neutral-100'} truncate">${step.title}</span>
+                  <span class="readable-text ${isStepCompleted ? 'line-through text-neutral-400' : 'text-neutral-100'} truncate">${escapeHTML(step.title)}</span>
                 </div>
-                <span class="text-[9px] font-mono text-neutral-300 ml-2 bg-white/[0.08] px-1.5 py-0.5 rounded">${step.tag || 'Paso'}</span>
+                <span class="text-[9px] font-mono text-neutral-300 ml-2 bg-white/[0.08] px-1.5 py-0.5 rounded">${escapeHTML(step.tag || 'Paso')}</span>
               </div>
             `;
           });
@@ -1262,8 +1296,8 @@
         div.innerHTML = `
           <div class="flex items-start justify-between">
             <div>
-              <div class="text-xs font-semibold text-white readable-text">${goal.title}</div>
-              <div class="text-[10px] text-neutral-300 capitalize">${goal.category}</div>
+              <div class="text-xs font-semibold text-white readable-text">${escapeHTML(goal.title)}</div>
+              <div class="text-[10px] text-neutral-300 capitalize">${escapeHTML(goal.category)}</div>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-[11px] font-mono text-white readable-text">${goal.progress_percentage}%</span>
@@ -1394,6 +1428,7 @@
 
     function toggleAutoRotatePreference() {
       autoRotateTabs = document.getElementById('pref-auto-rotate').checked;
+      initAutoRotate();
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.set_setting('auto_rotate_tabs', autoRotateTabs ? 'true' : 'false');
       }
@@ -1420,6 +1455,7 @@
         });
         window.pywebview.api.get_setting('auto_rotate_tabs', 'true').then(v => {
           autoRotateTabs = (v === 'true');
+          initAutoRotate();
           const chk = document.getElementById('pref-auto-rotate');
           if (chk) chk.checked = autoRotateTabs;
         });
@@ -1493,38 +1529,66 @@
     }
 
     // Datos y Estado
-    function fetchData() {
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.get_tasks().then(tasks => {
+    async function fetchData() {
+      const api = window.pywebview?.api;
+      if (!api || displayMode === 'tray') return;
+      try {
+        if (displayMode === 'orb') {
+          const tasks = await api.get_tasks();
+          if (displayMode !== 'orb') return;
           allTasks = tasks;
-          renderCurrentView();
-        });
-        window.pywebview.api.get_goals().then(goals => {
-          allGoals = goals;
-          if (currentView === 'goals') renderGoals();
-        });
-        window.pywebview.api.get_weekly_heatmap().then(heatmap => {
-          weeklyHeatmapData = heatmap;
-          renderWeeklyHeatmap();
-        });
+          updateCounters();
+          return;
+        }
+        const [tasks, goals, heatmap] = await Promise.all([
+          api.get_tasks(), api.get_goals(), api.get_weekly_heatmap()
+        ]);
+        if (displayMode !== 'window') return;
+        allTasks = tasks;
+        allGoals = goals;
+        weeklyHeatmapData = heatmap;
+        renderCurrentView();
+        renderWeeklyHeatmap();
         checkOverdueTasks();
-        checkConnectionStatus();
+      } catch (error) {
+        console.error(error);
       }
     }
 
-    let lastKnownDataVersion = "0";
+    let lastKnownDataVersion = null;
+    let lastKnownDate = getTodayDateStr();
+    let syncTimer = null;
 
-    function startBackgroundSync() {
-      setInterval(() => {
-        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.get_data_version === 'function') {
-          window.pywebview.api.get_data_version().then(currentVer => {
-            if (currentVer && currentVer !== lastKnownDataVersion) {
-              lastKnownDataVersion = currentVer;
-              fetchData();
-            }
-          }).catch(() => {});
+    async function syncIfChanged() {
+      const api = window.pywebview?.api;
+      if (!api || displayMode === 'tray') return;
+      try {
+        const version = await api.get_data_version();
+        if (displayMode === 'tray') return;
+        const today = getTodayDateStr();
+        if (today !== lastKnownDate || version !== lastKnownDataVersion) {
+          lastKnownDate = today;
+          lastKnownDataVersion = version;
+          await fetchData();
         }
-      }, 3000);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    function setDisplayMode(mode) {
+      displayMode = mode;
+      clearTimeout(clockTimer);
+      clearTimeout(smartRemindersTimer);
+      clearInterval(syncTimer);
+      initAutoRotate();
+      if (mode === 'window') {
+        startClock();
+        scheduleReminders(15000);
+      }
+      if (mode !== 'tray') {
+        syncTimer = setInterval(syncIfChanged, mode === 'orb' ? 30000 : 8000);
+      }
     }
 
     window.addEventListener('pywebviewready', () => {
@@ -1534,23 +1598,21 @@
         });
         window.pywebview.api.get_setting('auto_rotate_tabs', 'true').then(v => {
           autoRotateTabs = (v === 'true');
+          initAutoRotate();
         });
         window.pywebview.api.get_setting('hide_completed_tasks', 'false').then(v => {
           hideCompletedTasks = (v === 'true');
           updateHideCompletedUI();
         });
-        window.pywebview.api.get_data_version().then(ver => {
-          lastKnownDataVersion = ver || "0";
-        });
         loadMinimizeModePreference();
         loadAlwaysOnTopPreference();
+        checkConnectionStatus();
       }
       initFullWindowDrag();
       initWindowResizing();
-      initSmartReminders();
-      fetchData();
-      checkOverdueTasks();
-      startBackgroundSync();
+      loadSmartRemindersPreference().then(() => scheduleReminders(15000));
+      setDisplayMode('window');
+      syncIfChanged();
       setTimeout(checkForUpdatesOnStart, 8000);
     });
 
@@ -1584,6 +1646,7 @@
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.process_ai(userText).then(result => {
           renderAIConversation(result);
+          checkConnectionStatus();
         });
       }
     }
@@ -1617,9 +1680,9 @@
             <div class="flex items-center justify-between py-1 text-neutral-100 text-[11px] border-b border-white/[0.06] last:border-0 readable-text">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="w-1.5 h-1.5 rounded-full bg-white/80"></span>
-                <span class="truncate">${step.title}</span>
+                <span class="truncate">${escapeHTML(step.title)}</span>
               </div>
-              <span class="font-mono text-[9px] text-neutral-300 ml-2 bg-white/[0.1] px-1.5 py-0.5 rounded">${step.tag || 'Paso'}</span>
+              <span class="font-mono text-[9px] text-neutral-300 ml-2 bg-white/[0.1] px-1.5 py-0.5 rounded">${escapeHTML(step.tag || 'Paso')}</span>
             </div>
           `;
         });
@@ -1637,12 +1700,12 @@
           <div class="flex items-center justify-between pb-1.5 border-b border-white/[0.12]">
             <div class="flex items-center gap-2">
               <span class="text-white font-semibold readable-text">Meta Guardada</span>
-              <span class="px-2 py-0.5 rounded-md bg-white/[0.12] text-neutral-200 text-[10px] font-medium border border-white/[0.1]">${catBadge}</span>
+              <span class="px-2 py-0.5 rounded-md bg-white/[0.12] text-neutral-200 text-[10px] font-medium border border-white/[0.1]">${escapeHTML(catBadge)}</span>
             </div>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
           
-          <div class="text-neutral-200 my-2 readable-text leading-relaxed text-xs">${messageText}</div>
+          <div class="text-neutral-200 my-2 readable-text leading-relaxed text-xs">${escapeHTML(messageText)}</div>
 
           ${stepsHtml ? `<div class="space-y-1 my-2 p-2 rounded-xl bg-white/[0.04] border border-white/[0.08]">${stepsHtml}</div>` : ''}
 
@@ -1669,9 +1732,9 @@
             <div class="flex items-center justify-between py-1 text-neutral-100 text-[11px] border-b border-white/[0.06] last:border-0 readable-text">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="w-1.5 h-1.5 rounded-full bg-white/80"></span>
-                <span class="truncate">${step.title}</span>
+                <span class="truncate">${escapeHTML(step.title)}</span>
               </div>
-              <span class="font-mono text-[9px] text-neutral-300 ml-2 bg-white/[0.1] px-1.5 py-0.5 rounded">${step.tag || 'Paso'}</span>
+              <span class="font-mono text-[9px] text-neutral-300 ml-2 bg-white/[0.1] px-1.5 py-0.5 rounded">${escapeHTML(step.tag || 'Paso')}</span>
             </div>
           `;
         });
@@ -1682,7 +1745,7 @@
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
           
-          <div class="text-neutral-200 my-2 readable-text leading-relaxed text-xs">${messageText}</div>
+          <div class="text-neutral-200 my-2 readable-text leading-relaxed text-xs">${escapeHTML(messageText)}</div>
 
           <div class="space-y-1 my-2.5 p-2 rounded-xl bg-white/[0.04] border border-white/[0.08]">${stepsHtml}</div>
 
@@ -1713,8 +1776,9 @@
 
       if (result.action === 'question') {
         let buttonsHtml = '';
-        (result.options || []).forEach(opt => {
-          buttonsHtml += `<button onclick="sendToAI('${opt}')" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${opt}</button>`;
+        const options = result.options || [];
+        options.forEach((opt, index) => {
+          buttonsHtml += `<button data-ai-option="${index}" class="px-2.5 py-1 bg-white/[0.15] border border-white/[0.2] text-white rounded-lg hover:bg-white/[0.25] text-[11px] font-medium transition shadow-sm">${escapeHTML(opt)}</button>`;
         });
 
         const customInputPlaceholder = result.custom_placeholder || 'Escribe tu respuesta aquí para ver qué propone seeU...';
@@ -1725,7 +1789,7 @@
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
 
-          <div class="text-neutral-100 mt-2 readable-text leading-relaxed font-medium text-xs">${messageText}</div>
+          <div class="text-neutral-100 mt-2 readable-text leading-relaxed font-medium text-xs">${escapeHTML(messageText)}</div>
 
           <div class="flex flex-wrap gap-1.5 mt-2.5">${buttonsHtml}</div>
 
@@ -1733,7 +1797,7 @@
             <input 
               id="ai-dialog-input" 
               type="text" 
-              placeholder="${customInputPlaceholder}" 
+              placeholder="${escapeHTML(customInputPlaceholder)}"
               class="glass-input flex-1 rounded-xl px-3 py-1.5 text-xs text-white placeholder-neutral-400 focus:outline-none transition"
               onkeydown="if(event.key==='Enter'){ event.preventDefault(); sendDialogReply(); }"
             />
@@ -1742,6 +1806,10 @@
             </button>
           </div>
         `;
+
+        aiContent.querySelectorAll('[data-ai-option]').forEach(button => {
+          button.addEventListener('click', () => sendToAI(options[Number(button.dataset.aiOption)]));
+        });
 
         setTimeout(() => {
           const di = document.getElementById('ai-dialog-input');
@@ -1763,7 +1831,7 @@
             </div>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
-          <div class="text-neutral-200 mt-1.5 text-xs">${messageText}</div>
+          <div class="text-neutral-200 mt-1.5 text-xs">${escapeHTML(messageText)}</div>
           <div class="mt-2 flex justify-end">
             <button onclick="dismissAIBound(); switchView('agenda');" class="px-3 py-1 bg-white text-neutral-950 font-semibold rounded-lg text-xs hover:bg-neutral-100 transition shadow">
               Ver en Agenda
@@ -1788,7 +1856,7 @@
             </div>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
-          <div class="text-neutral-200 mt-1.5 text-xs">${messageText}</div>
+          <div class="text-neutral-200 mt-1.5 text-xs">${escapeHTML(messageText)}</div>
           <div class="mt-2 flex justify-end">
             <button onclick="dismissAIBound(); switchView('focus');" class="px-3 py-1 bg-white text-neutral-950 font-semibold rounded-lg text-xs hover:bg-neutral-100 transition shadow">
               Ver en Foco
@@ -1858,7 +1926,7 @@
             <span class="text-white font-semibold readable-text">Despejar Foco (Anti-Sobrecarga)</span>
             <button onclick="dismissAIBound()" class="text-neutral-400 hover:text-white text-xs px-1">&times;</button>
           </div>
-          <div class="text-neutral-200 mt-2 readable-text leading-relaxed text-xs">${res.message}</div>
+          <div class="text-neutral-200 mt-2 readable-text leading-relaxed text-xs">${escapeHTML(res.message)}</div>
           <div class="mt-3 flex justify-end">
             <button onclick="dismissAIBound()" class="px-3 py-1 bg-white text-neutral-950 rounded-xl text-xs font-semibold hover:bg-neutral-100 transition shadow">
               Comenzar con calma
@@ -1927,51 +1995,39 @@
       }
     }
 
-    function saveApiKey() {
+    async function verifyGemini(save) {
+      const api = window.pywebview?.api;
+      if (!api) return;
       const input = document.getElementById('api-key-input');
-      const val = input.value.trim();
       const msg = document.getElementById('test-result-msg');
-      if (!val) {
+      const saveButton = document.getElementById('save-api-key-btn');
+      const testButton = document.getElementById('test-api-key-btn');
+      const key = input.value.trim();
+      if (save && !key) {
         msg.textContent = 'Escribe o pega una clave antes de guardar.';
         msg.className = 'text-[11px] font-medium mt-1 text-amber-300';
         return;
       }
 
-      msg.textContent = 'Verificando con Google Gemini...';
+      saveButton.disabled = testButton.disabled = input.disabled = true;
+      msg.textContent = 'Comprobando conexión con Gemini…';
       msg.className = 'text-[11px] font-medium mt-1 text-neutral-300';
-
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.save_api_key(val).then(res => {
-          if (res.status === 'ok') {
-            msg.textContent = res.message;
-            msg.className = 'text-[11px] font-medium mt-1 text-emerald-400';
-            input.value = '';
-            input.placeholder = '••••••••';
-          } else {
-            msg.textContent = res.message;
-            msg.className = 'text-[11px] font-medium mt-1 text-red-400';
-          }
-          checkConnectionStatus();
-        });
-      }
-    }
-
-    function testConnection() {
-      const msg = document.getElementById('test-result-msg');
-      msg.textContent = 'Comprobando conexión con Gemini...';
-      msg.className = 'text-[11px] font-medium mt-1 text-neutral-300';
-
-      if (window.pywebview && window.pywebview.api) {
-        window.pywebview.api.test_connection().then(res => {
-          if (res.status === 'ok') {
-            msg.textContent = res.message;
-            msg.className = 'text-[11px] font-medium mt-1 text-emerald-400';
-          } else {
-            msg.textContent = res.message;
-            msg.className = 'text-[11px] font-medium mt-1 text-amber-300';
-          }
-          checkConnectionStatus();
-        });
+      try {
+        const result = save ? await api.save_api_key(key) : await api.test_connection();
+        msg.textContent = result.message;
+        msg.className = result.status === 'ok'
+          ? 'text-[11px] font-medium mt-1 text-emerald-400'
+          : 'text-[11px] font-medium mt-1 text-amber-300';
+        if (save && result.status === 'ok') {
+          input.value = '';
+          input.placeholder = '••••••••';
+        }
+        checkConnectionStatus();
+      } catch {
+        msg.textContent = 'seeU no pudo completar la comprobación. Vuelve a intentar.';
+        msg.className = 'text-[11px] font-medium mt-1 text-amber-300';
+      } finally {
+        saveButton.disabled = testButton.disabled = input.disabled = false;
       }
     }
 
@@ -1984,7 +2040,7 @@
             badge.textContent = 'Gemini Activo';
             badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono';
           } else {
-            badge.textContent = 'Motor Local';
+            badge.textContent = res.status === 'configured' ? 'Clave sin verificar' : 'Motor Local';
             badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/[0.15] text-neutral-300 font-mono';
           }
         }).catch(() => {
@@ -2133,10 +2189,18 @@
       if (rightHandle) rightHandle.addEventListener('mousedown', (e) => startResize(e, 'right'));
       if (cornerHandle) cornerHandle.addEventListener('mousedown', (e) => startResize(e, 'corner'));
 
+      function finishResize() {
+        if (!isResizingWindow) return;
+        isResizingWindow = false;
+        if (resizeRafId) cancelAnimationFrame(resizeRafId);
+        resizeRafId = null;
+        window.pywebview?.api.resize_window(currentWinWidth, currentWinHeight);
+      }
+
       window.addEventListener('mousemove', (e) => {
         if (!isResizingWindow) return;
         if (e.buttons !== 1) {
-          isResizingWindow = false;
+          finishResize();
           return;
         }
 
@@ -2161,7 +2225,7 @@
           if (!resizeRafId) {
             resizeRafId = requestAnimationFrame(() => {
               if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
-                window.pywebview.api.resize_window(currentWinWidth, currentWinHeight);
+                window.pywebview.api.resize_window(currentWinWidth, currentWinHeight, false);
               }
               resizeRafId = null;
             });
@@ -2169,14 +2233,7 @@
         }
       });
 
-      window.addEventListener('mouseup', () => {
-        if (isResizingWindow) {
-          isResizingWindow = false;
-          if (window.pywebview && window.pywebview.api && window.pywebview.api.resize_window) {
-            window.pywebview.api.resize_window(currentWinWidth, currentWinHeight);
-          }
-        }
-      });
+      window.addEventListener('mouseup', finishResize);
 
       if (window.pywebview && window.pywebview.api && window.pywebview.api.get_window_dimensions) {
         window.pywebview.api.get_window_dimensions().then(dims => {
@@ -2233,20 +2290,22 @@
         window.pywebview.api.set_setting('smart_reminders_enabled', smartRemindersEnabled ? 'true' : 'false');
       }
       if (!smartRemindersEnabled) {
+        clearTimeout(smartRemindersTimer);
         dismissSmartReminder();
       } else {
-        checkAndShowSmartReminder();
+        scheduleReminders(0);
       }
     }
 
     async function checkAndShowSmartReminder() {
       if (!smartRemindersEnabled) return;
-      if (document.body.classList.contains('orb-mode')) return;
+      if (displayMode !== 'window') return;
       if (currentView === 'settings') return;
 
       try {
         if (window.pywebview && window.pywebview.api && window.pywebview.api.get_smart_reminders) {
           const list = await window.pywebview.api.get_smart_reminders();
+          if (displayMode !== 'window') return;
           if (Array.isArray(list) && list.length > 0) {
             smartRemindersList = list;
             if (currentReminderIndex >= smartRemindersList.length) {
@@ -2318,13 +2377,13 @@
       }
     }
 
-    function initSmartReminders() {
-      loadSmartRemindersPreference();
-      // Primer chequeo suave a los 15 segundos tras arrancar
-      setTimeout(checkAndShowSmartReminder, 15000);
-      // Chequeo periódico cada 3 minutos (180,000 ms)
-      if (smartRemindersTimer) clearInterval(smartRemindersTimer);
-      smartRemindersTimer = setInterval(checkAndShowSmartReminder, 180000);
+    function scheduleReminders(delay) {
+      clearTimeout(smartRemindersTimer);
+      if (!smartRemindersEnabled || displayMode !== 'window') return;
+      smartRemindersTimer = setTimeout(() => {
+        checkAndShowSmartReminder();
+        scheduleReminders(180000);
+      }, delay);
     }
 
     // Control de Minimización y Modos (Micro-Orbe vs Solo Bandeja)
@@ -2378,6 +2437,8 @@
     }
 
     function minimizeToTray() {
+      setDisplayMode('tray');
+      dismissSmartReminder();
       document.getElementById('full-window').classList.add('hidden');
       document.getElementById('minimized-orb').classList.add('hidden');
       if (window.pywebview && window.pywebview.api) {
@@ -2386,27 +2447,26 @@
     }
 
     function minimizeToOrb() {
+      setDisplayMode('orb');
+      dismissSmartReminder();
       document.body.classList.add('orb-mode');
       document.getElementById('full-window').classList.add('hidden');
       document.getElementById('minimized-orb').classList.remove('hidden');
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.minimize_to_orb();
       }
+      syncIfChanged();
     }
 
     function restoreFromOrb() {
-      document.body.classList.remove('orb-mode');
-      const orb = document.getElementById('minimized-orb');
-      if (orb) orb.classList.add('hidden');
-      const win = document.getElementById('full-window');
-      if (win) win.classList.remove('hidden');
-      resetToToday();
+      restoreFromTray();
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.restore_window();
       }
     }
 
     function restoreFromTray() {
+      setDisplayMode('window');
       document.body.classList.remove('orb-mode');
       const orb = document.getElementById('minimized-orb');
       if (orb) orb.classList.add('hidden');
@@ -2416,18 +2476,28 @@
     }
 
     // Gestión del Micro-Orbe: clic instantáneo para restaurar y arrastre suave
-    let orbDragging = false;
+    let orbPointer = null;
     let orbMoved = false;
     let orbDownScreenX = 0;
     let orbDownScreenY = 0;
     let lastScreenX = 0;
     let lastScreenY = 0;
+    let orbDragFrame = 0;
+    let orbDx = 0;
+    let orbDy = 0;
 
     const orbEl = document.getElementById('minimized-orb');
 
-    orbEl.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      orbDragging = true;
+    function moveOrb() {
+      orbDragFrame = 0;
+      if (orbDx || orbDy) window.pywebview?.api.move_orb_by(orbDx, orbDy);
+      orbDx = orbDy = 0;
+    }
+
+    orbEl.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || orbPointer !== null) return;
+      orbPointer = e.pointerId;
+      orbEl.setPointerCapture(orbPointer);
       orbMoved = false;
       orbDownScreenX = e.screenX;
       orbDownScreenY = e.screenY;
@@ -2435,35 +2505,29 @@
       lastScreenY = e.screenY;
     });
 
-    window.addEventListener('mousemove', (e) => {
-      if (!orbDragging) return;
-      const totalDist = Math.hypot(e.screenX - orbDownScreenX, e.screenY - orbDownScreenY);
-      if (totalDist > 4) {
-        orbMoved = true;
-        const dx = e.screenX - lastScreenX;
-        const dy = e.screenY - lastScreenY;
-        lastScreenX = e.screenX;
-        lastScreenY = e.screenY;
-        if (dx !== 0 || dy !== 0) {
-          if (window.pywebview && window.pywebview.api && window.pywebview.api.move_orb_by) {
-            window.pywebview.api.move_orb_by(dx, dy);
-          }
-        }
-      }
+    orbEl.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== orbPointer) return;
+      if (!orbMoved && Math.hypot(e.screenX - orbDownScreenX, e.screenY - orbDownScreenY) <= 3) return;
+      orbMoved = true;
+      orbDx += e.screenX - lastScreenX;
+      orbDy += e.screenY - lastScreenY;
+      lastScreenX = e.screenX;
+      lastScreenY = e.screenY;
+      if (!orbDragFrame) orbDragFrame = requestAnimationFrame(moveOrb);
     });
 
-    window.addEventListener('mouseup', (e) => {
-      if (!orbDragging) return;
-      orbDragging = false;
-      if (!orbMoved) {
-        restoreFromOrb();
+    orbEl.addEventListener('lostpointercapture', () => {
+      orbPointer = null;
+      if (orbDragFrame) {
+        cancelAnimationFrame(orbDragFrame);
+        moveOrb();
       }
     });
 
     orbEl.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!orbMoved) {
+      if (!orbMoved || e.detail === 0) {
         restoreFromOrb();
       }
     });

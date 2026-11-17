@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from supervisor.models.task import Task
@@ -6,24 +7,7 @@ from supervisor.repositories import task_repository
 class TaskService:
     @staticmethod
     def get_all_tasks() -> List[Dict[str, Any]]:
-        tasks = task_repository.get_all_tasks()
-        return [
-            {
-                "id": t.id,
-                "title": t.title,
-                "description": t.description,
-                "status": t.status,
-                "scheduled_time": t.scheduled_time,
-                "scheduled_date": t.scheduled_date,
-                "task_type": t.task_type,
-                "tag": t.tag,
-                "goal_id": t.goal_id,
-                "recurrence": t.recurrence,
-                "is_priority": t.is_priority,
-                "created_at": t.created_at,
-            }
-            for t in tasks
-        ]
+        return [asdict(task) for task in task_repository.get_all_tasks()]
 
     @staticmethod
     def create_task(
@@ -50,20 +34,7 @@ class TaskService:
         )
         task_id = task_repository.save_task(task)
         task.id = task_id
-        return {
-            "id": task.id,
-            "title": task.title,
-            "description": task.description,
-            "status": task.status,
-            "scheduled_time": task.scheduled_time,
-            "scheduled_date": task.scheduled_date,
-            "task_type": task.task_type,
-            "tag": task.tag,
-            "goal_id": task.goal_id,
-            "recurrence": task.recurrence,
-            "is_priority": task.is_priority,
-            "created_at": task.created_at,
-        }
+        return asdict(task)
 
     @staticmethod
     def toggle_priority(task_id: int) -> bool:
@@ -145,7 +116,3 @@ class TaskService:
     @staticmethod
     def get_overall_stats() -> Dict[str, Any]:
         return task_repository.get_overall_stats()
-
-    @staticmethod
-    def get_data_version() -> str:
-        return task_repository.get_data_version()

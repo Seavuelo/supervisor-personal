@@ -38,14 +38,45 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Ejecutar pruebas
+        run: python -m unittest discover -s tests -v
+
       - name: Compilar seeU.exe y generar instalador seeU-Setup-x64.exe
         run: |
           python build_windows_exe.py
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path dist-installer\seeU-Setup-x64.exe)) {
+            throw "La compilación no produjo el instalador de Windows."
+          }
 
       - name: Empaquetar version portable en ZIP
         shell: pwsh
         run: |
           Compress-Archive -Path dist\seeU\* -DestinationPath dist-installer\seeU-Windows-Portable.zip
+
+      - name: Comprobar actualización sobre seeU 1.1.0
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $oldSetup = Join-Path $env:RUNNER_TEMP 'seeU-previous.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'seeU-installed'
+          Invoke-WebRequest -Uri 'https://github.com/Seavuelo/supervisor-personal/releases/download/v1.1.0/seeU-Setup-x64.exe' -OutFile $oldSetup
+          $flags = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /NOICONS'
+          $old = Start-Process -FilePath $oldSetup -ArgumentList "$flags /DIR=`"$installDir`"" -WindowStyle Hidden -Wait -PassThru
+          if ($old.ExitCode -ne 0 -or (Get-ItemPropertyValue 'HKCU:\Software\seeU' Version) -ne '1.1.0') {
+            throw "No se pudo instalar la versión anterior."
+          }
+          $dataDir = Join-Path $env:APPDATA 'seeU\data'
+          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+          $keepFile = Join-Path $dataDir 'upgrade-check.txt'
+          Set-Content -LiteralPath $keepFile -Value 'keep'
+          $new = Start-Process -FilePath 'dist-installer\seeU-Setup-x64.exe' -ArgumentList $flags -WindowStyle Hidden -Wait -PassThru
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $installed = Get-ItemProperty 'HKCU:\Software\seeU'
+          if ($new.ExitCode -ne 0 -or $installed.Version -ne $version -or
+              $installed.InstallPath -ne $installDir -or !(Test-Path $installed.ExePath) -or
+              (Get-Content -LiteralPath $keepFile -Raw).Trim() -ne 'keep') {
+            throw "La actualización no conservó la instalación y su carpeta de datos."
+          }
 
       - name: Publicar Instalador Oficial (.exe) y Version Portable (.zip)
         uses: actions/upload-artifact@v4
@@ -73,16 +104,11 @@ jobs:
             - **seeU-Setup-x64.exe**: Instalador visual guiado con accesos directos, icono oficial y desinstalador.
             - **seeU-Windows-Portable.zip**: Paquete portable para descomprimir y ejecutar de inmediato sin instalacion.
 
-            ### Aspectos destacados de la version 1.1.0
-            - Clasificacion inteligente automatica: la IA organiza tus entradas en Foco, Agenda y Metas sin tener que cambiar manualmente de seccion.
-            - Separacion estricta y sin mezclas entre tareas diarias (Foco), compromisos fechados (Agenda) y proyectos (Metas).
-            - Soporte para recordatorios recurrentes mensuales (ej. "el 19 de cada mes").
-            - Contador exacto de tareas pendientes en el micro-orbe flotante reflejando solo las tareas reales del dia de Foco.
-            - Modelos Google Gemini Flash-Lite priorizados (`gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`) para velocidad instantanea y prevencion de limites de cuota 429.
-            - Apertura nativa de enlaces externos en el navegador predeterminado mediante shell de Windows.
-            - Redimensionamiento dinamico interactivo (ancho y alto) con persistencia y adaptabilidad tipografica.
-            - Recordatorios proactivos y periodicos no invasivos para citas y fechas importantes.
-            - Barra de desplazamiento personalizada y ultra fina en el panel de opciones.
-            - Eliminacion absoluta de bordes rectangulares y artefactos de composicion DWM en esquinas y micro-orbe.
-            - Optimizacion de arranque rapido y eliminacion de bloqueos de interfaz.
+            ### Cambios
+            - Los hábitos y recordatorios recurrentes guardan un tick por fecha y vuelven a aparecer en su siguiente ocurrencia.
+            - Posponer o descartar pendientes solo modifica tareas de Foco.
+            - Listado mensual corregido en CLI y MCP. Las tareas sin fecha se cuentan en su día de creación.
+            - Gemini distingue los errores de conexión, clave, permisos y cuota. Guarda la clave validada en el almacén de credenciales del sistema.
+            - La interfaz funciona sin descargar estilos. El instalador conserva los datos de la instalación anterior.
+            - Micro-orbe más pequeño, con brillo al pasar el mouse. La bandeja pausa el trabajo periódico y el orbe solo refresca su contador cuando hay cambios.
 

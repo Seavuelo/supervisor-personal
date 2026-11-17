@@ -25,7 +25,8 @@ a = Analysis(
         'webview',
         'webview.platforms.qt',
         'google.genai',
-        'dotenv'
+        'dotenv',
+        'keyring.backends.Windows',
     ],
     hookspath=[],
     hooksconfig={},

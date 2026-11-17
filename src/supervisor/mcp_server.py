@@ -35,7 +35,7 @@ TOOLS_METADATA = [
                 "scheduled_time": {"type": "string", "description": "Hora de la cita en formato HH:MM (ej: 15:30)"},
                 "tag": {"type": "string", "description": "Etiqueta visual (ej: Hoy, Agenda, Examen, Diaria)"},
                 "is_priority": {"type": "boolean", "description": "Si la actividad debe marcarse con estrella prioritaria"},
-                "recurrence": {"type": "string", "enum": ["none", "daily", "weekly"], "description": "Recurrencia (usar 'daily' para habitos diarios)"}
+                "recurrence": {"type": "string", "enum": ["none", "daily", "weekly", "monthly"], "description": "Recurrencia de la tarea"}
             },
             "required": ["title"]
         }
@@ -104,7 +104,6 @@ TOOLS_METADATA = [
 ]
 
 def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
-    create_tables()
     task_service = TaskService()
     goal_service = GoalService()
 
@@ -116,7 +115,7 @@ def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
         tag = arguments.get("tag", "Hoy" if not s_date else "Agenda")
         is_prio = bool(arguments.get("is_priority", False))
         recurrence = arguments.get("recurrence", "none")
-        t_type = "daily" if recurrence == "daily" else ("appointment" if s_time else "quick")
+        t_type = "daily" if recurrence == "daily" else ("appointment" if s_time or recurrence in ("weekly", "monthly") else "quick")
 
         task = task_service.create_task(
             title=title,

@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
+from contextlib import closing
 from supervisor.database.connection import get_connection
 from supervisor.models.goal import Goal
-from supervisor.repositories.task_repository import touch_data_version
 
 def save_goal(goal: Goal) -> int:
     connection = get_connection()
@@ -24,61 +24,34 @@ def save_goal(goal: Goal) -> int:
     connection.commit()
     goal_id = cursor.lastrowid
     connection.close()
-    touch_data_version()
     return goal_id
 
 def get_all_goals() -> List[Dict[str, Any]]:
-    connection = get_connection()
-    cursor = connection.cursor()
+    with closing(get_connection()) as connection:
+        rows = connection.execute("""
+            SELECT g.id, g.title, g.description, g.status, g.category, g.created_at,
+                   t.id, t.title, t.status, t.tag
+            FROM goals g LEFT JOIN tasks t ON t.goal_id = g.id
+            ORDER BY g.id DESC, t.id
+        """).fetchall()
 
-    # Obtener metas junto con el conteo de pasos totales y completados
-    cursor.execute("""
-        SELECT 
-            g.id, 
-            g.title, 
-            g.description, 
-            g.status, 
-            g.category, 
-            g.created_at,
-            COUNT(t.id) as total_steps,
-            SUM(CASE WHEN t.status = 'completada' THEN 1 ELSE 0 END) as completed_steps
-        FROM goals g
-        LEFT JOIN tasks t ON t.goal_id = g.id
-        GROUP BY g.id
-        ORDER BY g.id DESC
-    """)
-    rows = cursor.fetchall()
-
-    goals = []
-    for row in rows:
-        total = row[6] or 0
-        completed = row[7] or 0
-        percentage = int((completed / total) * 100) if total > 0 else 0
-
-        # Obtener los micro-pasos asociados a esta meta
-        cursor.execute("""
-            SELECT id, title, status, tag
-            FROM tasks
-            WHERE goal_id = ?
-            ORDER BY id ASC
-        """, (row[0],))
-        steps = [{"id": s[0], "title": s[1], "status": s[2], "tag": s[3]} for s in cursor.fetchall()]
-
-        goals.append({
-            "id": row[0],
-            "title": row[1],
-            "description": row[2] or "",
-            "status": row[3],
-            "category": row[4] or "estudio",
-            "created_at": row[5] or "",
-            "total_steps": total,
-            "completed_steps": completed,
-            "progress_percentage": percentage,
-            "steps": steps
-        })
-
-    connection.close()
-    return goals
+    goals = {}
+    for goal_id, title, description, status, category, created_at, step_id, step_title, step_status, tag in rows:
+        if goal_id not in goals:
+            goals[goal_id] = {
+                "id": goal_id, "title": title, "description": description or "",
+                "status": status, "category": category or "estudio", "created_at": created_at or "",
+                "total_steps": 0, "completed_steps": 0, "progress_percentage": 0, "steps": [],
+            }
+        goal = goals[goal_id]
+        if step_id is not None:
+            goal["steps"].append({"id": step_id, "title": step_title, "status": step_status, "tag": tag})
+            goal["total_steps"] += 1
+            goal["completed_steps"] += step_status == "completada"
+    for goal in goals.values():
+        if goal["total_steps"]:
+            goal["progress_percentage"] = int(goal["completed_steps"] / goal["total_steps"] * 100)
+    return list(goals.values())
 
 def update_goal_status(goal_id: int, new_status: str) -> bool:
     connection = get_connection()
@@ -87,8 +60,6 @@ def update_goal_status(goal_id: int, new_status: str) -> bool:
     connection.commit()
     affected = cursor.rowcount > 0
     connection.close()
-    if affected:
-        touch_data_version()
     return affected
 
 def delete_goal(goal_id: int) -> bool:
@@ -100,6 +71,4 @@ def delete_goal(goal_id: int) -> bool:
     connection.commit()
     affected = cursor.rowcount > 0
     connection.close()
-    if affected:
-        touch_data_version()
     return affected
