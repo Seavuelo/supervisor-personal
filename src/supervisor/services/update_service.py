@@ -9,9 +9,9 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from supervisor import __version__ as CURRENT_VERSION
 from supervisor.repositories import settings_repository
 
-CURRENT_VERSION = "1.1.2"
 GITHUB_REPO = "Seavuelo/supervisor-personal"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 

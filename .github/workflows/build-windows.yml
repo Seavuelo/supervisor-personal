@@ -53,16 +53,16 @@ jobs:
         run: |
           Compress-Archive -Path dist\seeU\* -DestinationPath dist-installer\seeU-Windows-Portable.zip
 
-      - name: Comprobar actualización sobre seeU 1.1.0
+      - name: Comprobar actualización sobre seeU 1.1.2
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
           $oldSetup = Join-Path $env:RUNNER_TEMP 'seeU-previous.exe'
           $installDir = Join-Path $env:RUNNER_TEMP 'seeU-installed'
-          Invoke-WebRequest -Uri 'https://github.com/Seavuelo/supervisor-personal/releases/download/v1.1.0/seeU-Setup-x64.exe' -OutFile $oldSetup
+          Invoke-WebRequest -Uri 'https://github.com/Seavuelo/supervisor-personal/releases/download/v1.1.2/seeU-Setup-x64.exe' -OutFile $oldSetup
           $flags = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /NOICONS'
           $old = Start-Process -FilePath $oldSetup -ArgumentList "$flags /DIR=`"$installDir`"" -WindowStyle Hidden -Wait -PassThru
-          if ($old.ExitCode -ne 0 -or (Get-ItemPropertyValue 'HKCU:\Software\seeU' Version) -ne '1.1.0') {
+          if ($old.ExitCode -ne 0 -or (Get-ItemPropertyValue 'HKCU:\Software\seeU' Version) -ne '1.1.2') {
             throw "No se pudo instalar la versión anterior."
           }
           $dataDir = Join-Path $env:APPDATA 'seeU\data'
@@ -105,10 +105,7 @@ jobs:
             - **seeU-Windows-Portable.zip**: Paquete portable para descomprimir y ejecutar de inmediato sin instalacion.
 
             ### Cambios
-            - Los hábitos y recordatorios recurrentes guardan un tick por fecha y vuelven a aparecer en su siguiente ocurrencia.
-            - Posponer o descartar pendientes solo modifica tareas de Foco.
-            - Listado mensual corregido en CLI y MCP. Las tareas sin fecha se cuentan en su día de creación.
-            - Gemini distingue los errores de conexión, clave, permisos y cuota. Guarda la clave validada en el almacén de credenciales del sistema.
-            - La interfaz funciona sin descargar estilos. El instalador conserva los datos de la instalación anterior.
-            - Micro-orbe más pequeño, con brillo al pasar el mouse. La bandeja pausa el trabajo periódico y el orbe solo refresca su contador cuando hay cambios.
+            - seeU solicita un plazo de 15 segundos a Gemini para evitar el rechazo HTTP 400 por un plazo inferior al mínimo.
+            - Probar conexión comprueba la clave recién pegada y conserva la clave guardada hasta que se confirme el cambio.
+            - El campo acepta claves copiadas con caracteres invisibles. Los errores muestran el código y el motivo de Google sin incluir la clave.
 

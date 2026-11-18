@@ -220,8 +220,8 @@ class seeU_API:
     def save_api_key(self, key):
         return self.ai_service.set_api_key(key)
 
-    def test_connection(self):
-        return self.ai_service.test_connection()
+    def test_connection(self, key=None):
+        return self.ai_service.test_connection(key)
 
     def get_connection_status(self):
         return self.ai_service.get_connection_status()

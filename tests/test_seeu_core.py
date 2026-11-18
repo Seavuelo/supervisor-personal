@@ -202,7 +202,7 @@ class TestSeeUCore(unittest.TestCase):
 
         # 3. Métodos en ver de la API
         api = seeU_API()
-        self.assertEqual(api.get_app_version(), "1.1.2")
+        self.assertEqual(api.get_app_version(), "1.1.3")
 
     def test_monthly_summary_and_stats(self):
         service = TaskService()
@@ -321,6 +321,61 @@ class TestSeeUCore(unittest.TestCase):
         self.assertEqual(AIService().api_key, "old-placeholder")
         self.assertIsNone(settings_repository.get_setting("gemini_api_key"))
         self.assertEqual(AIService().get_connection_status()["status"], "configured")
+
+    def test_gemini_probe_sends_an_accepted_server_deadline(self):
+        from httpx2 import Client, Response
+        from supervisor.services.ai_service import AIService
+
+        def respond(_client, request, **_kwargs):
+            self.assertEqual(request.headers["x-server-timeout"], "15")
+            return Response(200, json={"candidates": [{
+                "content": {"role": "model", "parts": [{"text": "OK"}]},
+            }]}, request=request)
+
+        ai = AIService()
+        with patch.dict(os.environ, {"GOOGLE_GENAI_HTTP_CLIENT": "httpx2"}):
+            with patch.object(Client, "send", autospec=True, side_effect=respond) as send:
+                self.assertEqual(ai.test_connection("test-placeholder")["status"], "ok")
+        send.assert_called_once()
+
+    def test_test_connection_uses_pasted_key_without_replacing_saved_key(self):
+        settings_repository.set_setting("gemini_api_key", "existing-key")
+        api = seeU_API()
+        self.save_credential.reset_mock()
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(text="OK")
+        with patch.object(api.ai_service, "_new_client", return_value=client) as create_client:
+            result = api.test_connection(" \u200bAQ.pasted-\ufeffkey\r\n")
+        self.assertEqual(result["status"], "ok")
+        create_client.assert_called_once_with("AQ.pasted-key")
+        client.close.assert_called_once()
+        self.assertEqual(api.ai_service.api_key, "existing-key")
+        self.save_credential.assert_not_called()
+
+    def test_gemini_reports_structured_errors_without_raw_payload(self):
+        from google.genai.errors import APIError
+        from supervisor.services.ai_service import AIService
+
+        ai = AIService()
+        client = Mock()
+        for code, status, reason in (
+            (400, "INVALID_ARGUMENT", "TEST_REASON"),
+            (403, "PERMISSION_DENIED", "FREE_TIER_VERIFICATION_REQUIRED"),
+        ):
+            with self.subTest(code=code):
+                client.models.generate_content.side_effect = APIError(code, {"error": {
+                    "status": status,
+                    "message": "private-debug-text",
+                    "details": [{
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": reason,
+                    }],
+                }})
+                with patch.object(ai, "_new_client", return_value=client):
+                    result = ai.set_api_key("test-placeholder")
+                self.assertIn(f"[{code} · {status} · {reason}]", result["message"])
+                self.assertNotIn("private-debug-text", result["message"])
+        self.save_credential.assert_not_called()
 
     def test_mcp_server_tools_execution(self):
         from supervisor.mcp_server import execute_tool

@@ -2013,7 +2013,7 @@
       msg.textContent = 'Comprobando conexión con Gemini…';
       msg.className = 'text-[11px] font-medium mt-1 text-neutral-300';
       try {
-        const result = save ? await api.save_api_key(key) : await api.test_connection();
+        const result = save ? await api.save_api_key(key) : await api.test_connection(key || null);
         msg.textContent = result.message;
         msg.className = result.status === 'ok'
           ? 'text-[11px] font-medium mt-1 text-emerald-400'

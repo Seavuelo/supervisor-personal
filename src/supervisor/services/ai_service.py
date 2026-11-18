@@ -3,6 +3,7 @@ import json
 import re
 from datetime import date, datetime, timedelta
 from typing import Dict, Any, List, Optional
+from unicodedata import category
 from dotenv import load_dotenv
 import keyring
 from keyring.errors import KeyringError
@@ -25,6 +26,10 @@ def _save_key(key: str):
     settings_repository.delete_setting("gemini_api_key")
 
 
+def _normalize_key(value: str) -> str:
+    return "".join(char for char in value if not char.isspace() and category(char) != "Cf")
+
+
 class AIService:
     def __init__(self):
         legacy_key = settings_repository.get_setting("gemini_api_key")
@@ -38,7 +43,7 @@ class AIService:
                     saved_key = legacy_key
         except (KeyringError, OSError):
             saved_key = legacy_key
-        self.api_key = saved_key or os.getenv("GEMINI_API_KEY", "").strip()
+        self.api_key = _normalize_key(saved_key or os.getenv("GEMINI_API_KEY", ""))
         self.client = None
         self.active_model = CANDIDATE_MODELS[0]
         self.connection_status = "configured" if self.api_key else "offline"
@@ -52,22 +57,23 @@ class AIService:
         return genai.Client(
             api_key=key, vertexai=False,
             http_options=HttpOptions(
-                api_version="v1beta", timeout=8000, retry_options=HttpRetryOptions(attempts=1)
+                # El SDK envía este plazo a Gemini, que exige al menos 10 segundos.
+                api_version="v1beta", timeout=15_000, retry_options=HttpRetryOptions(attempts=1)
             ),
         )
 
-    def set_api_key(self, key: str) -> Dict[str, Any]:
-        key = key.strip()
-        if not key or any(char.isspace() for char in key):
-            return {"status": "error", "message": "Pega la clave de Gemini completa, sin espacios ni saltos de línea."}
+    def set_api_key(self, key: str, *, save: bool = True) -> Dict[str, Any]:
+        key = _normalize_key(key)
+        if not key or any(not 33 <= ord(char) <= 126 for char in key):
+            return {"status": "error", "message": "Copia la clave completa desde Google AI Studio y vuelve a pegarla."}
         try:
             client = self._new_client(key)
         except (ImportError, ValueError):
             return {"status": "error", "message": "No se pudo iniciar el componente de Gemini. Reinstala seeU."}
         result = self._probe(client)
-        if result["status"] != "ok":
+        if not save or result["status"] != "ok":
             client.close()
-            if not self.api_key:
+            if save and not self.api_key:
                 self.connection_status = "error"
             return result
         if self.client:
@@ -92,7 +98,9 @@ class AIService:
         """Comprobación ultra-rápida y no bloqueante para el inicio de la app."""
         return {"status": self.connection_status}
 
-    def test_connection(self) -> Dict[str, Any]:
+    def test_connection(self, key: Optional[str] = None) -> Dict[str, Any]:
+        if key is not None:
+            return self.set_api_key(key, save=False)
         if not self.api_key:
             return {
                 "status": "offline",
@@ -145,18 +153,37 @@ class AIService:
             }
         except APIError as error:
             code = error.code
-            if code == 401 or "API_KEY_INVALID" in str(error.details) or "API_KEY_EXPIRED" in str(error.details):
+            details = error.details if isinstance(error.details, dict) else {}
+            payload = details.get("error", details)
+            entries = payload.get("details") if isinstance(payload, dict) else None
+            reason = next(
+                (entry["reason"] for entry in entries
+                 if isinstance(entry, dict)
+                 and entry.get("@type") == "type.googleapis.com/google.rpc.ErrorInfo"
+                 and isinstance(entry.get("reason"), str)
+                 and re.fullmatch(r"[A-Z][A-Z0-9_]{0,59}", entry["reason"])),
+                "",
+            ) if isinstance(entries, list) else ""
+            status = error.status
+            status = status if isinstance(status, str) and re.fullmatch(r"[A-Z][A-Z_]{0,39}", status) else ""
+            diagnostic = " · ".join(filter(None, (str(code), status, reason)))
+            if code == 401 or reason in ("API_KEY_INVALID", "API_KEY_EXPIRED"):
                 message = "Google rechazó la clave. Verifica que siga activa en Google AI Studio."
+            elif reason == "FREE_TIER_VERIFICATION_REQUIRED":
+                message = "Google pide verificar el proyecto para usar el nivel gratuito. Abre Proyectos en Google AI Studio."
             elif code == 403:
-                message = "Google denegó el acceso (403). Revisa las restricciones de la clave y los permisos del proyecto en AI Studio."
-            elif code == 402 or error.status == "FAILED_PRECONDITION":
-                message = f"El proyecto no cumple los requisitos de Gemini ({code}). Revisa la región y la facturación en AI Studio."
+                message = "Google denegó el acceso. Revisa las restricciones de la clave y los permisos del proyecto en AI Studio."
+            elif code == 402 or status == "FAILED_PRECONDITION":
+                message = "El proyecto no cumple los requisitos de Gemini. Revisa la región y la facturación en AI Studio."
+            elif code == 400:
+                message = "Google rechazó la solicitud. Copia este diagnóstico si el problema persiste."
             elif code == 429:
-                message = "Gemini alcanzó un límite de solicitudes o de cuota (429). Revisa el uso del proyecto o vuelve a intentar más tarde."
+                message = "Gemini alcanzó un límite de solicitudes o de cuota. Revisa el uso del proyecto o vuelve a intentar más tarde."
             elif code == 404:
-                message = "El proyecto no tiene acceso a los modelos compatibles (404). Revisa su disponibilidad en Google AI Studio."
+                message = "El proyecto no tiene acceso a los modelos compatibles. Revisa su disponibilidad en Google AI Studio."
             else:
-                message = f"Gemini devolvió un error ({code}). Vuelve a intentar más tarde."
+                message = "Gemini devolvió un error. Vuelve a intentar más tarde."
+            message += f" [{diagnostic}]"
         except (TimeoutException, TimeoutError):
             message = "Se agotó el tiempo de espera. Revisa la conexión o el proxy y vuelve a probar."
         except (TransportError, OSError):
